@@ -1,0 +1,17 @@
+﻿group,relation,x,y,spearman_rho,p_value,n
+ALL,act-change -> NN-PR closeness(in),act_io_mean,shape_NN_FPR_in,0.12043428856175416,0.21440236850128166,108
+ALL,act-change -> closeness(extrap),act_io_mean,shape_NN_FPR_ext,0.18110877824223284,0.06068547366009512,108
+ALL,act-change -> Taylor-PR failure,act_io_mean,TPR_mse_vs_NN,0.44272445820433437,0.006852512717696141,36
+ALL,closeness -> perf gap,shape_NN_FPR_in,abs_rmse_gap,0.8222488972724761,1.0558774202450825e-27,108
+highdim_poly4,act-change -> NN-PR closeness(in),act_io_mean,shape_NN_FPR_in,-0.005153978468693299,0.9762005065446355,36
+highdim_poly4,act-change -> closeness(extrap),act_io_mean,shape_NN_FPR_ext,0.009792559090517267,0.9547976759564114,36
+highdim_poly4,act-change -> Taylor-PR failure,act_io_mean,TPR_mse_vs_NN,0.14285714285714288,0.6578298192773697,12
+highdim_poly4,closeness -> perf gap,shape_NN_FPR_in,abs_rmse_gap,0.8342342342342344,2.610570350234392e-10,36
+highdim_poly3,act-change -> NN-PR closeness(in),act_io_mean,shape_NN_FPR_in,0.30769251458098995,0.06791430142313382,36
+highdim_poly3,act-change -> closeness(extrap),act_io_mean,shape_NN_FPR_ext,0.42159543873911187,0.010439377900799478,36
+highdim_poly3,act-change -> Taylor-PR failure,act_io_mean,TPR_mse_vs_NN,0.37142857142857144,0.23453341256481172,12
+highdim_poly3,closeness -> perf gap,shape_NN_FPR_in,abs_rmse_gap,0.8646074646074647,1.0697864355375077e-11,36
+highdim_nonlinear,act-change -> NN-PR closeness(in),act_io_mean,shape_NN_FPR_in,0.03143926865902912,0.855564553654307,36
+highdim_nonlinear,act-change -> closeness(extrap),act_io_mean,shape_NN_FPR_ext,0.17317367654809482,0.31248107298788186,36
+highdim_nonlinear,act-change -> Taylor-PR failure,act_io_mean,TPR_mse_vs_NN,0.7142857142857143,0.009059462763762348,12
+highdim_nonlinear,closeness -> perf gap,shape_NN_FPR_in,abs_rmse_gap,0.7662805662805662,5.108854498533438e-08,36
