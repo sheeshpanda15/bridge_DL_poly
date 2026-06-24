@@ -4,7 +4,7 @@ measure_morala.py
 将 measure.py 的实验替换为 Morala et al. (2021, Neural Networks)
 "Towards a mathematical framework to inform neural network
 modelling via polynomial regression" 风格的模拟实验，并保留
-原项目中的几何距离测量（Mahalanobis / Kendall shape distance）。
+原项目中的几何距离测量（Mahalanobis / Procrustes distance）。
 
 每个实验中同时构建三个模型并互相比较：
   (1) NN        : 单隐层（或多隐层）前馈神经网络（原始模型）
@@ -18,7 +18,7 @@ modelling via polynomial regression" 风格的模拟实验，并保留
   - 三个模型的 Test MSE（相对真实 y）
   - 模型两两之间预测的 MSE（论文的核心指标：PR 是否复现 NN）
   - 模型两两之间的 Mahalanobis 距离（预测向量）与
-    Kendall 形状距离（响应曲面构形 [X, ŷ]）
+    Procrustes 形状距离（响应曲面构形 [X, ŷ]）
   - NN 训练过程中逐 epoch 的 线性层 vs 激活层 几何距离
   - 最后一个采集 epoch 的逐样本成对马氏距离
 
@@ -39,6 +39,9 @@ from itertools import product, combinations_with_replacement
 
 import numpy as np
 import torch
+# 多进程并行时，每个 worker 限制为单线程，避免 N 进程 × M 线程 过度抢占 CPU。
+# （网络极小，单线程足够；并行收益来自进程级而非线程级。）
+torch.set_num_threads(1)
 import torch.nn as nn
 import torch.optim as optim
 
@@ -50,7 +53,15 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
-from geomstats.geometry.pre_shape import PreShapeSpace
+# 逐层泰勒展开模块：把任意（含多隐层）NN 展开成多项式，作为多隐层情形的对照模型
+try:
+    from taylor_expand import expand_nn_to_polynomial
+    _HAS_TAYLOR_EXPAND = True
+except ImportError:
+    _HAS_TAYLOR_EXPAND = False
+
+# 注：距离改用 scipy.spatial.procrustes（在 kendall_shape_distance 内 import），
+# 不再依赖 geomstats，因此也不再需要 numpy<2 的版本约束。
 
 
 # ─────────────────────────────────────────────
@@ -176,16 +187,26 @@ def make_paper_polynomial(n=200, p=3, degree=2, noise_sd=0.1, rng=0):
     return X, y, (beta0, betas, powers)
 
 
-def make_smooth_nonlinear_lowdim(n=200, p=3, noise_sd=0.1, rng=0):
+def make_smooth_nonlinear_lowdim(n=200, p=3, noise_sd=0.1, rng=0, randomize=False):
     """
-    新增实验组：非多项式真值（原项目 smooth_nonlinear 的低维版），
-    检验当真实函数不是多项式时，Taylor-PR 对 NN 的局部复现能力。
-      y = sin(x1) + x2² + x2·x3 + x3 + ε
+    非多项式真值。
+      固定版 (randomize=False)：y = sin(x1) + x2² + x2·x3 + x3 + ε
+      随机版 (randomize=True) ：每个 seed 重新抽 sin 的频率/相位/幅度，
+          y = a·sin(ω·x1 + φ) + x2² + x2·x3 + x3 + ε
+      随机版的意义（建议一）：特征族里的 sin(x_i) 频率固定为 1、无相位，
+          与数据中随机的 ω、φ 对不上，因此 Full-PR 无论如何都无法靠
+          sin 特殊项"作弊"命中——这是无法被特征族补上的严格欠设定。
     """
     g = np.random.default_rng(rng)
     X = g.normal(0, 1, size=(n, p))
-    y = (np.sin(X[:, 0]) + X[:, 1] ** 2 + X[:, 1] * X[:, 2]
-         + X[:, 2] + g.normal(0, noise_sd, size=n))
+    if randomize:
+        omega = g.uniform(1.5, 3.5)
+        phi   = g.uniform(0, 2 * np.pi)
+        amp   = g.uniform(1.0, 2.5)
+        s = amp * np.sin(omega * X[:, 0] + phi)
+    else:
+        s = np.sin(X[:, 0])
+    y = s + X[:, 1] ** 2 + X[:, 1] * X[:, 2] + X[:, 2] + g.normal(0, noise_sd, size=n)
     return X, y, None
 
 
@@ -202,21 +223,31 @@ def scale_minmax(train, test, interval=(-1.0, 1.0)):
     return _s(train), _s(test)
 
 
-def generate_dataset(case, n=200, p=3, rng=0, scaling=(-1.0, 1.0)):
+def generate_dataset(case, n=200, p=3, rng=0, scaling=(-1.0, 1.0),
+                     scale_inputs=True):
     if case == "paper_poly2":
         X, y, _ = make_paper_polynomial(n=n, p=p, degree=2, rng=rng)
     elif case == "paper_poly3":
         X, y, _ = make_paper_polynomial(n=n, p=p, degree=3, rng=rng)
+    elif case == "paper_poly4":
+        # 4 阶 > 最大隐层数(3) → 所有深度的 Full-PR 都欠设定，无一命中
+        X, y, _ = make_paper_polynomial(n=n, p=p, degree=4, rng=rng)
     elif case == "smooth_nonlinear":
         X, y, _ = make_smooth_nonlinear_lowdim(n=n, p=p, rng=rng)
+    elif case == "smooth_nonlinear_rand":
+        # 频率/相位随机：sin 特殊项无法命中，严格欠设定（建议一）
+        X, y, _ = make_smooth_nonlinear_lowdim(n=n, p=p, rng=rng, randomize=True)
     else:
         raise ValueError(f"未知数据集：{case}")
 
-    # 论文流程：先缩放（X 与 y 都缩放），再 75/25 划分
+    # 论文流程：先缩放（X 与 y 都缩放），再 75/25 划分。
+    # scale_inputs=False 时不缩放 X（y 仍缩放以稳定训练）——
+    # 用于"未缩放输入"那一遍：激活层在更宽的工作范围上，非线性更易显现。
     X_tr, X_te, y_tr, y_te = train_test_split(
         X, y.reshape(-1, 1), test_size=0.25, random_state=42
     )
-    X_tr, X_te = scale_minmax(X_tr, X_te, scaling)
+    if scale_inputs:
+        X_tr, X_te = scale_minmax(X_tr, X_te, scaling)
     y_tr, y_te = scale_minmax(y_tr, y_te, scaling)
 
     to_t = lambda a: torch.tensor(a, dtype=torch.float32)
@@ -477,36 +508,94 @@ def mahalanobis(A, B, shrinkage='ledoitwolf', ridge=0.0):
 
 
 def kendall_shape_distance(A, B, n_landmarks=16, atol=1e-12):
-    """PCA 压成地标配置后计算 Kendall 形状距离（沿用原项目）"""
+    """
+    Procrustes 形状距离（替换原 Kendall 测地距离）。
+
+    用 scipy.spatial.procrustes：对两个配置做最优平移/缩放/旋转对齐后，
+    返回 disparity = 对齐后逐点残差的平方和 M² = Σ‖a_i − b_i‖²。
+
+    与原 Kendall 版的两点区别：
+      1. 使用全部 n 个点参与对齐，而非只取 PCA 投影的前 n_comp 行做地标
+         —— 因此尾部/极端样本不再被排除在计算之外；
+      2. procrustes 要求两个矩阵形状相同。当 A、B 列数不同（如激活层 vs
+         下一线性层），先各自 PCA 到相同的 n_comp 维再对齐。
+    （函数名/签名保持不变，所有调用点无需改动。）
+    """
+    from scipy.spatial import procrustes
+
     A = np.asarray(A, dtype=np.float64)
     B = np.asarray(B, dtype=np.float64)
-    n_comp = min(n_landmarks, A.shape[1], B.shape[1], A.shape[0] - 1)
-    if n_comp < 2:
-        return float("nan")   # 一维构形不构成形状空间
+    if A.shape[0] < 2 or A.shape[1] < 1 or B.shape[1] < 1:
+        return float("nan")
 
-    A_proj = PCA(n_components=n_comp).fit_transform(A)
-    B_proj = PCA(n_components=n_comp).fit_transform(B)
-    landmark_A = A_proj[:n_comp, :]
-    landmark_B = B_proj[:n_comp, :]
+    # 列数不同时：各自 PCA 降到相同维度；列数相同则直接用原始坐标
+    if A.shape[1] != B.shape[1]:
+        n_comp = min(A.shape[1], B.shape[1], A.shape[0] - 1)
+        if n_comp < 1:
+            return float("nan")
+        A = PCA(n_components=n_comp).fit_transform(A)
+        B = PCA(n_components=n_comp).fit_transform(B)
 
-    k, m = landmark_A.shape
-    ps = PreShapeSpace(k_landmarks=k, ambient_dim=m)
-    ZA = ps.projection(landmark_A)
-    ZB = ps.projection(landmark_B)
-    if np.allclose(ZA, ZB, atol=atol):
-        return 0.0
-    return max(float(ps.metric.dist(ZA, ZB)), 0.0)
+    # 一维列无法用 procrustes 标准化（norm 后退化），补一列零升到二维
+    if A.shape[1] == 1:
+        A = np.hstack([A, np.zeros((A.shape[0], 1))])
+        B = np.hstack([B, np.zeros((B.shape[0], 1))])
+
+    # procrustes 会对每个输入做中心化 + Frobenius 归一化；
+    # 若某个配置本身是常数（norm=0）会报错，先挡掉
+    if np.allclose(A - A.mean(0), 0, atol=atol) or \
+       np.allclose(B - B.mean(0), 0, atol=atol):
+        return float("nan")
+
+    _, _, disparity = procrustes(A, B)
+    return max(float(disparity), 0.0)
 
 
 def surface_shape_distance(X, predA, predB, n_landmarks=16):
     """
     模型间的响应曲面形状距离：
     把两模型的拟合图象 {(x_i, ŷ_i)} 视为 (n, p+1) 构形，
-    再用 Kendall 形状距离比较。
+    再用 Procrustes 形状距离比较。
     """
     GA = np.hstack([X, predA.reshape(-1, 1)])
     GB = np.hstack([X, predB.reshape(-1, 1)])
     return kendall_shape_distance(GA, GB, n_landmarks=n_landmarks)
+
+
+def activation_io_distances(model, X):
+    """
+    在【已训练好】的网络上，对每一个激活层，测量
+        该层激活前的线性输出 u = (上一层输出·W + b)
+        与激活后 g(u)
+    之间的 Procrustes 形状距离。每一激活层单独给一个值。
+
+    直接前向一次、用 hook 抓每个激活模块的 input/output，
+    因此 u 与 g(u) 必然同形状(逐元素激活)，可直接比较，无需 PCA。
+    返回 {层名: 距离}，键按激活层在网络中的顺序排列。
+    """
+    captured = []  # [(activation_module_name, u, g(u)), ...]
+    handles = []
+
+    def make_hook(name):
+        def hook(module, inp, out):
+            u  = inp[0].detach().cpu().numpy()   # 激活前（线性层输出）
+            gu = out.detach().cpu().numpy()       # 激活后
+            captured.append((name, u, gu))
+        return hook
+
+    act_types = (nn.ReLU, nn.Sigmoid, nn.Tanh, nn.Softplus)
+    for name, m in model.named_modules():
+        if isinstance(m, act_types):
+            handles.append(m.register_forward_hook(make_hook(name)))
+
+    model.eval()
+    with torch.no_grad():
+        model(X if torch.is_tensor(X) else torch.tensor(X, dtype=torch.float32))
+    for h in handles:
+        h.remove()
+
+    captured.sort(key=lambda t: int(t[0].split(".")[1]))
+    return {name: kendall_shape_distance(u, gu) for name, u, gu in captured}
 
 
 def next_name(name):
@@ -579,7 +668,7 @@ def _fmt(x, w=12, prec=6):
 
 def epoch_layer_distances(X_input=None, verbose=True):
     """
-    新指标：NN 中每一层输出与其上一层输出之间的 Kendall 形状距离，
+    新指标：NN 中每一层输出与其上一层输出之间的 Procrustes 形状距离，
     并对每个 epoch 求所有相邻层对的均值（adjacent-layer shape mean）。
 
     - X_input 不为 None 时，把网络输入作为第 0 层，参与 input → model.0 的比较；
@@ -645,7 +734,7 @@ def epoch_layer_distances(X_input=None, verbose=True):
         print(f"  │ NN 内部：逐 Epoch 相邻层几何距离")
         print(f"  ├{'─' * 66}")
         print(f"  │ {'Epoch':>6}  {'相邻层对':<22}{'Mahalanobis':>13}"
-              f"{'Kendall shape':>15}")
+              f"{'Procrustes':>15}")
         for ep in sorted(epoch_rows.keys()):
             for i, (pair, md, sd) in enumerate(epoch_rows[ep]):
                 ep_str = f"{ep:>6}" if i == 0 else " " * 6
@@ -668,9 +757,19 @@ def epoch_layer_distances(X_input=None, verbose=True):
 def run_experiment(case="paper_poly2", activation="softplus",
                    hidden_layers=(4,), q=3, scaling=(-1.0, 1.0),
                    n=200, p=3, epochs=1500, optimizer="rprop",
-                   capture_every=150, seed=0, verbose=True):
-    torch.manual_seed(seed)
-    np.random.seed(seed)
+                   capture_every=150, seed=0, data_seed=None, init_seed=None,
+                   include_special=True, verbose=True):
+    # 拆分随机性来源：
+    #   data_seed 控制数据生成（哪份数据集）
+    #   init_seed 控制网络权重初始化（训练随机性）
+    # 不指定时退回旧行为（都用 seed），保持向后兼容。
+    if data_seed is None:
+        data_seed = seed
+    if init_seed is None:
+        init_seed = seed
+
+    torch.manual_seed(init_seed)
+    np.random.seed(init_seed)
     reset_capture()
 
     hidden_layers = list(hidden_layers)
@@ -679,16 +778,18 @@ def run_experiment(case="paper_poly2", activation="softplus",
 
     if verbose:
         print(f"\n{'=' * 72}")
+        sp = "含sin/e^x" if include_special else "纯多项式"
         print(f"实验：case={case}  activation={activation}  "
-              f"hidden={hidden_layers}  q={q}  scaling={list(scaling)}  seed={seed}")
+              f"hidden={hidden_layers}  q={q}  scaling={list(scaling)}  "
+              f"data_seed={data_seed} init_seed={init_seed}  Full-PR={sp}")
         print(f"{'=' * 72}")
 
-    # 1. 数据
-    X_tr, X_te, y_tr, y_te = generate_dataset(case, n=n, p=p, rng=seed,
+    # 1. 数据（用 data_seed）
+    X_tr, X_te, y_tr, y_te = generate_dataset(case, n=n, p=p, rng=data_seed,
                                               scaling=scaling)
     X_te_np, y_te_np = X_te.numpy(), y_te.numpy()
 
-    # 2. 训练 NN（带 hook 采集；history 记录采集 epoch 上的 MSE）
+    # 2. 训练 NN（权重初始化用 init_seed；带 hook 采集）
     model = ConfigurableNet(p, hidden_layers, activation)
     hooks = register_hooks(model)
     history = train_nn(model, X_tr, y_tr, X_eval=X_te, y_eval=y_te,
@@ -701,7 +802,53 @@ def run_experiment(case="paper_poly2", activation="softplus",
     remove_hooks(hooks)
 
     res = {"case": case, "activation": activation, "h": tuple(hidden_layers),
-           "q": q, "seed": seed, "nn_mse": nn_mse}
+           "q": q, "seed": seed, "data_seed": data_seed, "init_seed": init_seed,
+           "nn_mse": nn_mse}
+
+    # 2b. 每一激活层 u → g(u) 的 Procrustes 距离（在已训练好的网络上，缩放输入）
+    #     测量"数据经过每个激活层时被改变了多少几何"。
+    act_io_scaled = activation_io_distances(model, X_te)
+    for name, d in act_io_scaled.items():
+        res[f"act_io_scaled[{name}]"] = d
+    res["act_io_scaled_mean"] = (
+        float(np.nanmean(list(act_io_scaled.values()))) if act_io_scaled
+        else float("nan"))
+    res["act_io_scaled_sum"] = (
+        float(np.nansum(list(act_io_scaled.values()))) if act_io_scaled
+        else float("nan"))
+
+    # 2c. 未缩放输入：在未缩放 X 上重新训练一个同结构网络，再测同样的逐层距离。
+    #     （中间层无法"只换输入不换权重"，故必须重训以保持自洽。）
+    torch.manual_seed(init_seed)
+    np.random.seed(init_seed)
+    Xu_tr, Xu_te, yu_tr, yu_te = generate_dataset(
+        case, n=n, p=p, rng=data_seed, scaling=scaling, scale_inputs=False)
+    model_u = ConfigurableNet(p, hidden_layers, activation)
+    train_nn(model_u, Xu_tr, yu_tr, epochs=epochs,
+             optimizer_name=optimizer, capture_every=epochs + 1, verbose=False)
+    act_io_unscaled = activation_io_distances(model_u, Xu_te)
+    for name, d in act_io_unscaled.items():
+        res[f"act_io_unscaled[{name}]"] = d
+    res["act_io_unscaled_mean"] = (
+        float(np.nanmean(list(act_io_unscaled.values()))) if act_io_unscaled
+        else float("nan"))
+    res["act_io_unscaled_sum"] = (
+        float(np.nansum(list(act_io_unscaled.values()))) if act_io_unscaled
+        else float("nan"))
+
+    if verbose:
+        print(f"\n  ┌{'─' * 66}")
+        print(f"  │ 每层激活 u → g(u) 的 Procrustes 距离（已训练网络）")
+        print(f"  ├{'─' * 66}")
+        print(f"  │ {'激活层':<14}{'缩放输入':>14}{'未缩放输入':>14}")
+        names = sorted(set(act_io_scaled) | set(act_io_unscaled),
+                       key=lambda s: int(s.split('.')[1]))
+        for nm in names:
+            print(f"  │ {nm:<14}{_fmt(act_io_scaled.get(nm, float('nan')), 14)}"
+                  f"{_fmt(act_io_unscaled.get(nm, float('nan')), 14)}")
+        print(f"  │ {'★ 均值':<14}{_fmt(res['act_io_scaled_mean'], 14)}"
+              f"{_fmt(res['act_io_unscaled_mean'], 14)}")
+        print(f"  └{'─' * 66}")
 
     # 3. Taylor-PR（Morala et al. 式(6)，仅单隐层 + 光滑激活）
     pred_tpr = None
@@ -726,21 +873,47 @@ def run_experiment(case="paper_poly2", activation="softplus",
         if verbose:
             print(f"\n  [Taylor-PR] 跳过：{reason}")
 
-    # 4. Full-PR（全设定多项式模型：完整交互项 + sin/e^x，max_order = 隐层数）
+    # 3b. LayerTaylor-PR（逐层泰勒展开，适用任意层数，含多隐层）
+    #     当单隐层 Taylor-PR 不可用（多隐层）时，用 taylor_expand 模块把整网
+    #     逐层展开成多项式，作为多隐层情形下的多项式对照模型。
+    #     在数据点（突触电位均值）处展开，精度 order=q，总次数封顶防爆。
+    pred_ltpr = None
+    if _HAS_TAYLOR_EXPAND and activation != "relu":
+        try:
+            ltpr_poly = expand_nn_to_polynomial(
+                model, input_dim=p, order=q, expansion_point="data",
+                X_ref=X_tr.numpy(), max_total_degree=max(q, n_hidden * 2))
+            pred_ltpr = ltpr_poly.predict(X_te_np)
+            res["ltpr_mse_vs_y"]  = mean_squared_error(y_te_np, pred_ltpr)
+            res["ltpr_mse_vs_nn"] = mean_squared_error(pred_nn, pred_ltpr)
+            res["ltpr_n_terms"]   = ltpr_poly.n_terms
+            res["ltpr_max_degree"] = ltpr_poly.max_total_degree
+            if verbose:
+                print(f"  [LayerTaylor-PR] 逐层展开：{ltpr_poly.n_terms} 项，"
+                      f"最高 {ltpr_poly.max_total_degree} 次，"
+                      f"MSE vs NN={res['ltpr_mse_vs_nn']:.3e}")
+        except Exception as e:
+            if verbose:
+                print(f"  [LayerTaylor-PR] 展开失败：{e}")
+
+    # 4. Full-PR（多项式模型，max_order = 隐层数）
+    #    include_special=True：完整交互项 + sin(x_i) + e^{x_i}
+    #    include_special=False：纯多项式（建议二，对 4 阶数据是数学上无争议的欠设定）
+    res["fpr_special"] = include_special
     pred_fpr, fpr_model = fit_full_pr(X_tr.numpy(), y_tr.numpy(), X_te_np,
-                                      max_order=max_order_full_pr)
+                                      max_order=max_order_full_pr,
+                                      include_special=include_special)
     res["fpr_mse_vs_y"]  = mean_squared_error(y_te_np, pred_fpr)
     res["fpr_mse_vs_nn"] = mean_squared_error(pred_nn, pred_fpr)
 
     # 4b. 多项式蒸馏：用与 Full-PR 完全相同的特征族去拟合 NN 自身的预测
     #     （训练集上拟合，测试集上量残差）。
-    #     残差直接衡量"NN 学到的函数离这个多项式族有多远"——
-    #     不含 y、不含噪声、不依赖 Full-PR 对 y 拟合的好坏，
-    #     且对多隐层 / ReLU 也有定义（不像 Taylor-PR）。
     with torch.no_grad():
         pred_nn_tr = model(X_tr).numpy()
-    F_tr_d = custom_features_full(X_tr.numpy(), max_order=max_order_full_pr)
-    F_te_d = custom_features_full(X_te_np,      max_order=max_order_full_pr)
+    F_tr_d = custom_features_full(X_tr.numpy(), max_order=max_order_full_pr,
+                                  include_special=include_special)
+    F_te_d = custom_features_full(X_te_np, max_order=max_order_full_pr,
+                                  include_special=include_special)
     distill = LinearRegression().fit(F_tr_d, pred_nn_tr)
     res["distill_resid"] = mean_squared_error(pred_nn, distill.predict(F_te_d))
 
@@ -768,6 +941,8 @@ def run_experiment(case="paper_poly2", activation="softplus",
     preds = {"NN": pred_nn}
     if pred_tpr is not None:
         preds["Taylor-PR"] = pred_tpr
+    if pred_ltpr is not None:
+        preds["LayerTaylor-PR"] = pred_ltpr
     preds["Full-PR"] = pred_fpr
 
     names = list(preds.keys())
@@ -775,7 +950,7 @@ def run_experiment(case="paper_poly2", activation="softplus",
         print(f"\n  ┌{'─' * 66}")
         print(f"  │ 模型间几何距离（预测向量 Mahalanobis / 响应曲面 Kendall shape）")
         print(f"  ├{'─' * 66}")
-        print(f"  │ {'模型对':<26}{'Mahalanobis':>13}{'Kendall shape':>15}")
+        print(f"  │ {'模型对':<26}{'Mahalanobis':>13}{'Procrustes':>15}")
     for i in range(len(names)):
         for j in range(i + 1, len(names)):
             a, b = names[i], names[j]
@@ -794,12 +969,13 @@ def run_experiment(case="paper_poly2", activation="softplus",
     #     学到的函数是否一致。同分布上两个好模型必然接近（三角不等式），
     #     真正区分"学到同一个函数"与"恰好都拟合了数据"的是外推行为。
     lo, hi = scaling
-    rng_ext = np.random.default_rng(seed + 10_000)
+    rng_ext = np.random.default_rng(data_seed + 10_000)
     X_ext = rng_ext.uniform(2 * lo, 2 * hi, size=(200, p))
     with torch.no_grad():
         pred_nn_ext = model(torch.tensor(X_ext, dtype=torch.float32)).numpy()
     pred_fpr_ext = fpr_model.predict(
-        custom_features_full(X_ext, max_order=max_order_full_pr))
+        custom_features_full(X_ext, max_order=max_order_full_pr,
+                             include_special=include_special))
     res["nnfpr_mse_ext"]   = mean_squared_error(pred_nn_ext, pred_fpr_ext)
     res["nnfpr_shape_ext"] = surface_shape_distance(X_ext, pred_nn_ext,
                                                     pred_fpr_ext)
@@ -871,7 +1047,8 @@ def run_experiment(case="paper_poly2", activation="softplus",
 # ─────────────────────────────────────────────
 # 重复模拟：复现论文 3.2 节的 MSE 分布研究（缩小版）
 # ─────────────────────────────────────────────
-def repeat_study(case, activation, h1, q, scaling, repeats, epochs):
+def repeat_study(case, activation, h1, q, scaling, repeats, epochs,
+                 include_special=True):
     """
     重复模拟 + 相关性研究：数值检验
         「NN 与 PR 的几何距离近 ⇒ 两者的拟合效果接近」
@@ -882,7 +1059,7 @@ def repeat_study(case, activation, h1, q, scaling, repeats, epochs):
         而几何距离约束的是加法结构上的绝对差（三角不等式）。
       - 距离一：RMSE(NN, PR) 预测间距离 —— gap ≤ 该距离是定理
         （三角不等式），程序对每次运行做自检；
-      - 距离二：Kendall 形状距离（模掉平移/缩放）—— 与 gap 的关系
+      - 距离二：Procrustes 形状距离（模掉平移/缩放）—— 与 gap 的关系
         没有数学保证，是本研究真正要检验的经验命题；
       - 距离三：Mahalanobis（预测向量）。
     输出 Spearman 相关并导出 CSV（repeat_corr_<case>_<act>.csv）。
@@ -899,7 +1076,8 @@ def repeat_study(case, activation, h1, q, scaling, repeats, epochs):
     for r in range(repeats):
         res = run_experiment(case=case, activation=activation,
                              hidden_layers=(h1,), q=q, scaling=scaling,
-                             epochs=epochs, seed=r, verbose=False)
+                             epochs=epochs, seed=r,
+                             include_special=include_special, verbose=False)
         rmse_nn  = math.sqrt(res["nn_mse"])
         rmse_fpr = math.sqrt(res["fpr_mse_vs_y"])
         gap      = abs(rmse_nn - rmse_fpr)
@@ -935,9 +1113,9 @@ def repeat_study(case, activation, h1, q, scaling, repeats, epochs):
     gaps = [r["gap"] for r in rows]
     print(f"\n  ── 距离 vs 性能差距 |ΔRMSE| 的 Spearman 相关 ──")
     _corr([r["d_rmse"]  for r in rows], gaps, "RMSE(NN,PR)（定理保证上界）")
-    _corr([r["d_shape"] for r in rows], gaps, "Kendall shape 内（经验命题★）")
+    _corr([r["d_shape"] for r in rows], gaps, "Procrustes 内（经验命题★）")
     _corr([r["d_mahal"] for r in rows], gaps, "Mahalanobis")
-    _corr([r["d_shape_ext"] for r in rows], gaps, "Kendall shape 外推区")
+    _corr([r["d_shape_ext"] for r in rows], gaps, "Procrustes 外推区")
     tg = [r["tpr_gap"] for r in rows]
     _corr([r["tpr_d_shape"] for r in rows], tg, "NN↔Taylor-PR shape vs 其gap")
 
@@ -949,80 +1127,445 @@ def repeat_study(case, activation, h1, q, scaling, repeats, epochs):
 
 
 # ─────────────────────────────────────────────
+# 大规模蒙特卡洛模拟 + Excel 导出
+# ─────────────────────────────────────────────
+def _flatten_result(r):
+    """把一次 run_experiment 的 res 摊平成单行 dict（只保留标量指标）。"""
+    row = {
+        "case": r["case"], "activation": r["activation"],
+        "hidden": ",".join(str(x) for x in r["h"]),
+        "n_hidden": len(r["h"]), "q": r["q"], "seed": r["seed"],
+        "special": bool(r.get("fpr_special", True)),
+        "NN_mse_vs_y":  r.get("nn_mse"),
+        "FPR_mse_vs_y": r.get("fpr_mse_vs_y"),
+        "FPR_mse_vs_NN": r.get("fpr_mse_vs_nn"),
+        "TPR_mse_vs_NN": r.get("tpr_mse_vs_nn", float("nan")),
+        "TPR_mse_vs_y":  r.get("tpr_mse_vs_y", float("nan")),
+        "LTPR_mse_vs_NN": r.get("ltpr_mse_vs_nn", float("nan")),
+        "LTPR_mse_vs_y":  r.get("ltpr_mse_vs_y", float("nan")),
+        "LTPR_n_terms":   r.get("ltpr_n_terms", float("nan")),
+        "shape_NN_LTPR":  r.get("shape[NN|LayerTaylor-PR]", float("nan")),
+        "shape_LTPR_FPR": r.get("shape[LayerTaylor-PR|Full-PR]", float("nan")),
+        "u_coverage":    r.get("u_coverage", float("nan")),
+        # 几何指标
+        "act_pair_mean":      r.get("act_shape_mean_last", float("nan")),
+        "act_io_scaled_mean": r.get("act_io_scaled_mean", float("nan")),
+        "act_io_unscaled_mean": r.get("act_io_unscaled_mean", float("nan")),
+        "act_io_scaled_sum":  r.get("act_io_scaled_sum", float("nan")),
+        "act_io_unscaled_sum": r.get("act_io_unscaled_sum", float("nan")),
+        "io_shape":           r.get("io_shape_last", float("nan")),
+        "shape_NN_FPR_in":    r.get("shape[NN|Full-PR]", float("nan")),
+        "shape_NN_FPR_ext":   r.get("nnfpr_shape_ext", float("nan")),
+        "mahal_NN_FPR":       r.get("mahal[NN|Full-PR]", float("nan")),
+        "distill_resid":      r.get("distill_resid", float("nan")),
+    }
+    # 派生：性能差 |RMSE_NN − RMSE_FPR| 与 log10 比值
+    if r.get("nn_mse", 0) > 0 and r.get("fpr_mse_vs_y", 0) > 0:
+        row["abs_rmse_gap"] = abs(math.sqrt(r["nn_mse"])
+                                  - math.sqrt(r["fpr_mse_vs_y"]))
+        row["NN_FPR_log10"] = math.log10(r["nn_mse"] / r["fpr_mse_vs_y"])
+    else:
+        row["abs_rmse_gap"] = float("nan")
+        row["NN_FPR_log10"] = float("nan")
+    return row
+
+
+def monte_carlo(epochs=800, seeds=30, out_path="monte_carlo_results.xlsx",
+                cases=None, activations=("softplus", "tanh", "sigmoid"),
+                depths=((4,), (8, 4), (16, 8, 4)), specials=(True, False),
+                q=3):
+    """
+    大规模蒙特卡洛：对每个 (case × activation × depth × special) 配置跑 `seeds`
+    个不同随机种子，收集所有指标，导出 Excel：
+      - Sheet 'raw'      ：每次模拟一行（全部指标）
+      - Sheet 'summary'  ：按配置聚合的 均值 / 标准差
+      - Sheet 'correlations'：跨全部样本，几何距离 vs 性能/接近度 的相关
+    """
+    import pandas as pd
+    from scipy.stats import spearmanr, pearsonr
+
+    if cases is None:
+        cases = ["paper_poly4", "smooth_nonlinear_rand"]
+
+    configs = [(c, a, d, sp) for c in cases for a in activations
+               for d in depths for sp in specials]
+    total = len(configs) * seeds
+    print(f"蒙特卡洛：{len(configs)} 配置 × {seeds} seeds = {total} 次模拟")
+
+    rows, done = [], 0
+    for (case, act, depth, sp) in configs:
+        for s in range(seeds):
+            r = run_experiment(case=case, activation=act, hidden_layers=depth,
+                               q=q, epochs=epochs, seed=s,
+                               include_special=sp, verbose=False)
+            rows.append(_flatten_result(r))
+            done += 1
+            if done % 10 == 0 or done == total:
+                print(f"  进度 {done}/{total}")
+
+    df = pd.DataFrame(rows)
+
+    # 聚合：按配置算 均值/标准差
+    group_keys = ["case", "activation", "hidden", "special"]
+    metric_cols = [c for c in df.columns if c not in
+                   group_keys + ["n_hidden", "q", "seed"]]
+    summary = df.groupby(group_keys)[metric_cols].agg(["mean", "std"])
+    summary.columns = [f"{m}_{stat}" for m, stat in summary.columns]
+    summary = summary.reset_index()
+
+    # 相关性：几何距离 vs (接近度 shape_NN_FPR_in / 性能差 abs_rmse_gap)
+    def safe_corr(x, y):
+        m = df[[x, y]].dropna()
+        if len(m) < 5:
+            return (float("nan"), float("nan"), float("nan"), len(m))
+        rho, p_s = spearmanr(m[x], m[y])
+        r_p, p_p = pearsonr(m[x], m[y])
+        return (rho, p_s, r_p, len(m))
+
+    corr_pairs = [
+        ("act_io_scaled_mean",   "shape_NN_FPR_in"),
+        ("act_io_unscaled_mean", "shape_NN_FPR_in"),
+        ("act_pair_mean",        "shape_NN_FPR_in"),
+        ("act_io_scaled_mean",   "shape_NN_FPR_ext"),
+        ("act_io_scaled_mean",   "abs_rmse_gap"),
+        ("act_io_scaled_mean",   "TPR_mse_vs_NN"),
+        ("io_shape",             "shape_NN_FPR_in"),
+        ("shape_NN_FPR_in",      "abs_rmse_gap"),
+    ]
+    corr_rows = []
+    for x, y in corr_pairs:
+        rho, ps, rp, n = safe_corr(x, y)
+        corr_rows.append({"x": x, "y": y, "spearman_rho": rho,
+                          "spearman_p": ps, "pearson_r": rp, "n": n})
+    corr_df = pd.DataFrame(corr_rows)
+
+    # 写 Excel（三个 sheet）
+    with pd.ExcelWriter(out_path, engine="openpyxl") as xl:
+        df.to_excel(xl, sheet_name="raw", index=False)
+        summary.to_excel(xl, sheet_name="summary", index=False)
+        corr_df.to_excel(xl, sheet_name="correlations", index=False)
+
+    # 简单加粗表头 + 冻结首行 + 列宽
+    from openpyxl import load_workbook
+    from openpyxl.styles import Font
+    wb = load_workbook(out_path)
+    for ws in wb.worksheets:
+        ws.freeze_panes = "A2"
+        for cell in ws[1]:
+            cell.font = Font(bold=True, name="Arial")
+        for col in ws.columns:
+            width = max((len(str(c.value)) for c in col if c.value is not None),
+                        default=8)
+            ws.column_dimensions[col[0].column_letter].width = min(width + 2, 24)
+    wb.save(out_path)
+
+    print(f"\n已导出：{out_path}")
+    print(f"  raw          : {len(df)} 行 × {len(df.columns)} 列")
+    print(f"  summary      : {len(summary)} 个配置的均值/标准差")
+    print(f"  correlations : {len(corr_df)} 组相关性检验")
+    print(f"\n关键相关（跨全部 {len(df)} 样本）：")
+    for _, cr in corr_df.iterrows():
+        print(f"  {cr['x']:<22} vs {cr['y']:<18}: "
+              f"ρ={cr['spearman_rho']:>6.3f} (p={cr['spearman_p']:.3g}, n={int(cr['n'])})")
+    return df, summary, corr_df
+
+
+# ─────────────────────────────────────────────
 # 主流程
 # ─────────────────────────────────────────────
-def default_grid(epochs):
+def _grid_worker(case, act, hidden, special, q, epochs, data_seed, init_seed):
+    """单个 (配置, init_seed) 的工作单元——供多进程并行调用。
+    必须是模块顶层函数，否则无法被 pickle 传到子进程。
+    每个子进程有独立的全局 hook 状态(reset_capture 在 run_experiment 内调用)，
+    因此进程间互不干扰。"""
+    r = run_experiment(case=case, activation=act, hidden_layers=hidden,
+                       q=q, epochs=epochs, data_seed=data_seed,
+                       init_seed=init_seed, include_special=special,
+                       verbose=False)
+    row = _flatten_result(r)
+    row["well_specified"] = (
+        (case == "paper_poly2" and len(hidden) == 2) or
+        (case == "paper_poly3" and len(hidden) == 3) or
+        (case == "paper_poly4" and len(hidden) == 4))
+    return row
+
+
+def default_grid(epochs, repeats=50, data_seed=0, out_prefix="results",
+                 n_jobs=1):
     """
-    默认实验组（每个配置都跑 1 / 2 / 3 个隐层三种深度）：
-      A 组（论文复现）  ：二阶多项式数据 × {softplus, tanh, sigmoid}，q=3
-      B 组（新增）      ：三阶多项式数据，softplus，q ∈ {3, 5}
-      C 组（新增）      ：非多项式光滑数据，softplus
-    深度变体：(4,) / (8,4) / (16,8,4)。
-    注意：Taylor-PR 仅在单隐层时构建（式(6)限制）；
-          Full-PR 的 max_order = 隐层层数，随深度同步升阶。
+    重复模拟实验组（论文式：固定数据、扫网络初始化）。
+      - 每个配置用同一份数据（data_seed 固定），扫 `repeats` 个不同的
+        网络初始化 init_seed，反映"同数据、不同局部极小"的训练随机性。
+      - 数据集：
+          paper_poly4 (4阶)     ：欠设定（>最大隐层数3），永不命中
+          paper_poly3 (3阶)     ：3 隐层时【正好命中】（well-specified 对照）
+          smooth_nonlinear_rand ：非多项式，严格欠设定
+          smooth_nonlinear      ：固定频率非多项式对照
+      - 深度 (4,)/(8,4)/(16,8,4)，Full-PR 含/不含特殊项各一组。
+    输出：聚合汇总表、相关性摘要表（你的提议C）、箱线图+散点图、CSV。
     """
+    import pandas as pd
+    from scipy.stats import spearmanr
+
     depth_variants = [(4,), (8, 4), (16, 8, 4)]
     base_configs = (
-        [("paper_poly2", act, 3) for act in ("softplus", "tanh", "sigmoid")]
-        + [("paper_poly3", "softplus", q) for q in (3, 5)]
-        + [("smooth_nonlinear", "softplus", 3)]
+        [("paper_poly4", a) for a in ("softplus", "tanh", "sigmoid")]
+        + [("paper_poly3", a) for a in ("softplus", "tanh", "sigmoid")]
+        + [("smooth_nonlinear_rand", a) for a in ("softplus", "tanh", "sigmoid")]
+        + [("smooth_nonlinear", "softplus")]
     )
 
-    results = []
-    for case, act, q in base_configs:
-        for hidden in depth_variants:
-            results.append(run_experiment(case=case, activation=act,
-                                          hidden_layers=hidden, q=q,
-                                          epochs=epochs))
+    def is_well_specified(case, n_hidden):
+        return (case == "paper_poly2" and n_hidden == 2) or \
+               (case == "paper_poly3" and n_hidden == 3) or \
+               (case == "paper_poly4" and n_hidden == 4)
 
-    # 汇总表
-    h_str = lambda h: ",".join(str(x) for x in h)
-    print(f"\n{'═' * 126}")
-    print("汇总（缩放空间内的 MSE；形状指标取自最后采集 epoch；"
-          "Taylor-PR 仅单隐层可用；Full-PR max_order = 隐层层数）")
-    print(f"{'═' * 126}")
-    header = (f"{'case':<17}{'act':<10}{'q':<3}{'hidden':<9}{'NN vs y':>10}"
-              f"{'TPR vs NN':>12}{'TPR vs y':>10}{'FPR vs NN':>12}{'FPR vs y':>10}"
-              f"{'邻层均值':>11}{'激活对(非线性)':>15}"
-              f"{'NN/FPR(lg)':>12}{'NN↔FPR形(内)':>13}{'NN↔FPR形(外)':>13}{'输入↔输出':>12}")
-    print(header)
-    print('─' * 126)
+    plan = [(c, a, h, sp) for (c, a) in base_configs
+            for h in depth_variants for sp in (True, False)]
+    total = len(plan) * repeats
+    print(f"重复模拟：{len(base_configs)} 基础配置 × {len(depth_variants)} 深度 "
+          f"× 2 特殊项 × {repeats} 初始化 seed = {total} 次")
+    print(f"并行进程数 n_jobs={n_jobs}"
+          f"{'（串行）' if n_jobs == 1 else ''}")
+
+    tasks = [(case, act, hidden, special, 3, epochs, data_seed, init_seed)
+             for (case, act, hidden, special) in plan
+             for init_seed in range(repeats)]
+
+    if n_jobs == 1:
+        rows = []
+        for i, t in enumerate(tasks):
+            rows.append(_grid_worker(*t))
+            if (i + 1) % 25 == 0 or (i + 1) == total:
+                print(f"  进度 {i + 1}/{total}")
+    else:
+        from joblib import Parallel, delayed
+        rows = Parallel(n_jobs=n_jobs, verbose=10)(
+            delayed(_grid_worker)(*t) for t in tasks)
+
+    df = pd.DataFrame(rows)
+
+    # ── 1) 聚合汇总表（均值±标准差）──
+    gk = ["case", "activation", "hidden", "special", "well_specified"]
+    agg_cols = ["NN_mse_vs_y", "FPR_mse_vs_y", "FPR_mse_vs_NN", "TPR_mse_vs_NN",
+                "LTPR_mse_vs_NN", "shape_NN_LTPR",
+                "act_io_scaled_mean", "act_io_unscaled_mean",
+                "shape_NN_FPR_in", "shape_NN_FPR_ext", "NN_FPR_log10"]
+    g = df.groupby(gk)[agg_cols].agg(["mean", "std"])
+
+    print(f"\n{'═' * 178}")
+    print(f"聚合汇总（每格 {repeats} 次重复 均值±标准差；★=well-specified 正好命中；"
+          f"LTPR=逐层泰勒展开多项式）")
+    print(f"{'═' * 178}")
+    print(f"{'case':<22}{'act':<9}{'hid':<8}{'特殊':<5}{'命中':<5}"
+          f"{'NN_mse':>16}{'FPR_mse':>16}{'FPR vs NN':>16}"
+          f"{'LTPR vs NN':>16}{'形NN-LTPR':>16}"
+          f"{'u→gu缩放':>14}{'形NN-FPR(内)':>16}{'形(外)':>16}")
+    print('─' * 178)
     prev_case = None
-    for r in results:
-        if prev_case is not None and r['case'] != prev_case:
-            print('─' * 126)
-        prev_case = r['case']
-        tpr_nn = r.get('tpr_mse_vs_nn', float('nan'))
-        tpr_y  = r.get('tpr_mse_vs_y',  float('nan'))
-        tpr_nn_s = f"{tpr_nn:>12.3e}" if not math.isnan(tpr_nn) else f"{'—':>12}"
-        tpr_y_s  = f"{tpr_y:>10.4f}"  if not math.isnan(tpr_y)  else f"{'—':>10}"
-        # NN/FPR(lg) = log10(NN_mse / FPR_mse)：负数 = NN 更好，正数 = Full-PR 反超
-        fpr_y = r['fpr_mse_vs_y']
-        if r['nn_mse'] > 0 and fpr_y > 0:
-            ratio_s = f"{math.log10(r['nn_mse'] / fpr_y):>12.3f}"
-        else:
-            ratio_s = f"{'—':>12}"
-        print(f"{r['case']:<17}{r['activation']:<10}{r['q']:<3}"
-              f"{h_str(r['h']):<9}"
-              f"{r['nn_mse']:>10.4f}"
-              f"{tpr_nn_s}{tpr_y_s}"
-              f"{r['fpr_mse_vs_nn']:>12.3e}"
-              f"{r['fpr_mse_vs_y']:>10.4f}"
-              f"{r.get('adj_shape_mean_last', float('nan')):>11.4f}"
-              f"{r.get('act_shape_mean_last', float('nan')):>15.4f}"
-              f"{ratio_s}"
-              f"{r.get('shape[NN|Full-PR]', float('nan')):>13.4f}"
-              f"{r.get('nnfpr_shape_ext', float('nan')):>13.4f}"
-              f"{r.get('io_shape_last', float('nan')):>12.4f}")
-    print('═' * 126)
-    return results
+    for idx, sub in g.iterrows():
+        case, act, hid, sp, ws = idx
+        if prev_case is not None and case != prev_case:
+            print('─' * 178)
+        prev_case = case
+        def ms(col):
+            m, s = sub[(col, "mean")], sub[(col, "std")]
+            if math.isnan(m):
+                return f"{'—':>14}"
+            return f"{m:.4f}±{s:.4f}"
+        print(f"{case:<22}{act:<9}{hid:<8}{'✓' if sp else '✗':<5}"
+              f"{'★' if ws else ' ':<5}"
+              f"{ms('NN_mse_vs_y'):>16}{ms('FPR_mse_vs_y'):>16}"
+              f"{ms('FPR_mse_vs_NN'):>16}"
+              f"{ms('LTPR_mse_vs_NN'):>16}{ms('shape_NN_LTPR'):>16}"
+              f"{ms('act_io_scaled_mean'):>14}"
+              f"{ms('shape_NN_FPR_in'):>16}{ms('shape_NN_FPR_ext'):>16}")
+    print('═' * 178)
 
+    # ── 2) 相关性摘要表（你的提议C）──
+    corr_pairs = [
+        ("act_io_scaled_sum",   "shape_NN_FPR_in",  "激活改变总值(缩放) → NN-PR接近度(内)"),
+        ("act_io_unscaled_sum", "shape_NN_FPR_in",  "激活改变总值(未缩) → NN-PR接近度(内)"),
+        ("act_io_scaled_sum",   "shape_NN_FPR_ext", "激活改变总值(缩放) → NN-PR接近度(外推)"),
+        ("act_io_scaled_sum",   "abs_rmse_gap",     "激活改变总值(缩放) → 性能差距"),
+        ("act_pair_mean",       "shape_NN_FPR_in",  "相邻层非线性 → NN-PR接近度(内)"),
+        ("shape_NN_FPR_in",     "abs_rmse_gap",     "NN-PR(Full)接近度 → 性能差距"),
+        # LayerTaylor-PR 相关：逐层泰勒多项式与 NN 的接近度
+        ("shape_NN_LTPR",       "abs_rmse_gap",     "NN-LayerTaylorPR接近度 → 性能差距"),
+        ("act_io_scaled_sum",   "shape_NN_LTPR",    "激活改变总值(缩放) → NN-LayerTaylorPR接近度"),
+        ("shape_NN_LTPR",       "shape_NN_FPR_in",  "NN-LayerTaylorPR ↔ NN-FullPR 接近度"),
+        # 逐层泰勒展开多项式 与 Full-PR 的直接关系（你要的图）
+        ("shape_LTPR_FPR",      "abs_rmse_gap",     "LayerTaylorPR-FullPR接近度 → 性能差距"),
+        ("shape_LTPR_FPR",      "shape_NN_FPR_in",  "LayerTaylorPR-FullPR ↔ NN-FullPR 接近度"),
+    ]
+    corr_records = []
+    groups = [("ALL", df)] + [(c, df[df["case"] == c]) for c in df["case"].unique()]
+    for gname, gdf in groups:
+        for x, y, label in corr_pairs:
+            m = gdf[[x, y]].dropna()
+            if len(m) >= 5 and m[x].std() > 0 and m[y].std() > 0:
+                rho, pval = spearmanr(m[x], m[y])
+            else:
+                rho, pval = float("nan"), float("nan")
+            corr_records.append({"group": gname, "relation": label, "x": x, "y": y,
+                                 "spearman_rho": rho, "p_value": pval, "n": len(m)})
+    corr_df = pd.DataFrame(corr_records)
+
+    print(f"\n{'═' * 96}")
+    print("相关性摘要（Spearman ρ；几何距离 vs 接近度/性能）")
+    print(f"{'═' * 96}")
+    print(f"{'数据集':<24}{'关系':<40}{'ρ':>8}{'p':>10}{'n':>6}")
+    print('─' * 96)
+    prev_g = None
+    for _, cr in corr_df.iterrows():
+        if prev_g is not None and cr["group"] != prev_g:
+            print('─' * 96)
+        prev_g = cr["group"]
+        sig = "*" if (not math.isnan(cr["p_value"]) and cr["p_value"] < 0.05) else " "
+        rho_s = f"{cr['spearman_rho']:.3f}" if not math.isnan(cr['spearman_rho']) else "—"
+        p_s = f"{cr['p_value']:.3g}" if not math.isnan(cr['p_value']) else "—"
+        print(f"{cr['group']:<24}{cr['relation']:<40}{rho_s:>7}{sig}{p_s:>10}{cr['n']:>6}")
+    print(f"{'═' * 96}")
+    print("(* 表示 p<0.05)")
+
+    # ── 3) 可视化 ──
+    try:
+        _make_plots(df, corr_pairs, out_prefix)
+        plotted = True
+    except Exception as e:
+        print(f"绘图跳过（{e}）")
+        plotted = False
+
+    # ── 4) CSV 导出 ──
+    raw_csv = f"{out_prefix}_raw.csv"
+    corr_csv = f"{out_prefix}_correlations.csv"
+    df.to_csv(raw_csv, index=False, encoding="utf-8-sig")
+    corr_df.to_csv(corr_csv, index=False, encoding="utf-8-sig")
+    print(f"\n已导出：")
+    print(f"  {raw_csv}          （{len(df)} 行原始记录）")
+    print(f"  {corr_csv} （相关性摘要）")
+    if plotted:
+        cases = sorted(df["case"].unique())
+        print(f"  按数据集分别出图（每个数据集 2 张：_geometry.png / _mse.png）：")
+        for c in cases:
+            print(f"    {out_prefix}_{c}_geometry.png, {out_prefix}_{c}_mse.png")
+        print(f"  {out_prefix}_overview_boxplot.png （总览箱线图）")
+    return df, corr_df
+
+
+def _make_plots(df, corr_pairs, out_prefix):
+    """
+    按数据集分别出图，避免不同数据集混在一张图里互相掩盖（Simpson 悖论）。
+    每个数据集生成两张图：
+      <prefix>_<case>_geometry.png  —— 几何距离 vs 接近度/性能（散点，按激活着色）
+      <prefix>_<case>_mse.png       —— 各测量指标 vs MSE、以及模型间表现关系
+    另外保留一张总览箱线图。
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    acts = ["softplus", "tanh", "sigmoid"]
+    colors = {"softplus": "#2a9d8f", "tanh": "#e76f51", "sigmoid": "#264653"}
+
+    en_label = {
+        ("act_io_scaled_sum", "shape_NN_FPR_in"):  "act-change(sum,scaled) -> NN-FullPR closeness(in)",
+        ("act_io_unscaled_sum", "shape_NN_FPR_in"): "act-change(sum,unscaled) -> NN-FullPR closeness(in)",
+        ("act_io_scaled_sum", "shape_NN_FPR_ext"):  "act-change(sum,scaled) -> closeness(extrap)",
+        ("act_io_scaled_sum", "abs_rmse_gap"):      "act-change(sum,scaled) -> perf gap",
+        ("act_pair_mean", "shape_NN_FPR_in"):       "adj-layer nonlin -> NN-FullPR closeness(in)",
+        ("shape_NN_FPR_in", "abs_rmse_gap"):        "NN-FullPR closeness -> perf gap",
+        ("shape_NN_LTPR", "abs_rmse_gap"):          "NN-LayerTaylorPR closeness -> perf gap",
+        ("act_io_scaled_sum", "shape_NN_LTPR"):     "act-change -> NN-LayerTaylorPR closeness",
+        ("shape_NN_LTPR", "shape_NN_FPR_in"):       "NN-LayerTaylorPR vs NN-FullPR closeness",
+        ("shape_LTPR_FPR", "abs_rmse_gap"):         "LayerTaylorPR-FullPR closeness -> perf gap",
+        ("shape_LTPR_FPR", "shape_NN_FPR_in"):      "LayerTaylorPR-FullPR vs NN-FullPR",
+    }
+
+    def scatter_grid(sub_df, pairs, title, path):
+        n = len(pairs)
+        ncol = 3
+        nrow = (n + ncol - 1) // ncol
+        fig, axes = plt.subplots(nrow, ncol, figsize=(15, 4.3 * nrow))
+        axes_flat = axes.ravel() if hasattr(axes, "ravel") else [axes]
+        for ax, (x, y, _lab) in zip(axes_flat, pairs):
+            if x not in sub_df.columns or y not in sub_df.columns:
+                ax.set_visible(False); continue
+            for a in acts:
+                s = sub_df[sub_df["activation"] == a][[x, y]].dropna()
+                ax.scatter(s[x], s[y], s=16, alpha=0.5, color=colors[a], label=a)
+            ax.set_xlabel(x); ax.set_ylabel(y)
+            ax.set_title(en_label.get((x, y), f"{x} vs {y}"), fontsize=9)
+            ax.grid(alpha=0.3); ax.legend(fontsize=7)
+        for ax in axes_flat[n:]:
+            ax.set_visible(False)
+        fig.suptitle(title, fontsize=13)
+        fig.tight_layout(); fig.savefig(path, dpi=130); plt.close(fig)
+
+    # 几何距离 / 接近度 / 性能 的散点对
+    geom_pairs = corr_pairs
+
+    # MSE & 模型间表现关系 的散点对（直接调查各指标与 MSE 的关系，以及模型互比）
+    mse_pairs = [
+        ("act_io_scaled_sum", "NN_mse_vs_y",   "act-change -> NN MSE(vs y)"),
+        ("shape_NN_FPR_in",   "FPR_mse_vs_NN", "NN-FullPR closeness -> FullPR MSE(vs NN)"),
+        ("shape_NN_LTPR",     "LTPR_mse_vs_NN","NN-LayerTaylorPR closeness -> LTPR MSE(vs NN)"),
+        ("NN_mse_vs_y",       "FPR_mse_vs_y",  "NN MSE vs FullPR MSE (both vs y)"),
+        ("FPR_mse_vs_NN",     "LTPR_mse_vs_NN","FullPR vs LayerTaylorPR (both MSE vs NN)"),
+        ("NN_mse_vs_y",       "abs_rmse_gap",  "NN MSE -> NN-FullPR perf gap"),
+    ]
+    mse_label = {p[:2]: p[2] for p in mse_pairs}
+
+    def mse_grid(sub_df, title, path):
+        fig, axes = plt.subplots(2, 3, figsize=(15, 9))
+        for ax, (x, y, _l) in zip(axes.ravel(), mse_pairs):
+            if x not in sub_df.columns or y not in sub_df.columns:
+                ax.set_visible(False); continue
+            for a in acts:
+                s = sub_df[sub_df["activation"] == a][[x, y]].dropna()
+                ax.scatter(s[x], s[y], s=16, alpha=0.5, color=colors[a], label=a)
+            # 对“两模型 MSE 互比”那张加 y=x 参考线
+            if (x, y) == ("NN_mse_vs_y", "FPR_mse_vs_y"):
+                lim = max(sub_df[x].max(), sub_df[y].max())
+                ax.plot([0, lim], [0, lim], "k--", lw=0.8, alpha=0.6)
+            ax.set_xlabel(x); ax.set_ylabel(y)
+            ax.set_title(mse_label.get((x, y), f"{x} vs {y}"), fontsize=9)
+            ax.grid(alpha=0.3); ax.legend(fontsize=7)
+        fig.suptitle(title, fontsize=13)
+        fig.tight_layout(); fig.savefig(path, dpi=130); plt.close(fig)
+
+    # ── 按数据集分别出图 ──
+    for case in sorted(df["case"].unique()):
+        sub = df[df["case"] == case]
+        scatter_grid(sub, geom_pairs,
+                     f"[{case}] Geometric distance vs closeness/performance",
+                     f"{out_prefix}_{case}_geometry.png")
+        mse_grid(sub,
+                 f"[{case}] Measurements vs MSE & model-vs-model performance",
+                 f"{out_prefix}_{case}_mse.png")
+
+    # ── 总览箱线图（按激活函数，跨全部数据集）──
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    for ax, col, title in [
+        (axes[0], "act_io_scaled_sum", "activation change u->g(u) (sum)"),
+        (axes[1], "shape_NN_FPR_in", "NN-FullPR shape dist (in)"),
+        (axes[2], "abs_rmse_gap", "NN-FullPR perf gap")]:
+        data = [df[df["activation"] == a][col].dropna().values for a in acts]
+        bp = ax.boxplot(data, labels=acts, patch_artist=True, showfliers=True)
+        for patch, a in zip(bp["boxes"], acts):
+            patch.set_facecolor(colors[a]); patch.set_alpha(0.6)
+        ax.set_title(title); ax.set_ylabel(col); ax.grid(alpha=0.3)
+    fig.suptitle("Overview: metrics by activation (all datasets, all repeats)",
+                 fontsize=13)
+    fig.tight_layout(); fig.savefig(f"{out_prefix}_overview_boxplot.png", dpi=130)
+    plt.close(fig)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Morala et al. 风格实验 + 几何距离测量")
     parser.add_argument("--case", type=str, default=None,
-                        choices=["paper_poly2", "paper_poly3", "smooth_nonlinear"],
+                        choices=["paper_poly2", "paper_poly3", "paper_poly4",
+                                 "smooth_nonlinear", "smooth_nonlinear_rand"],
                         help="数据集；不指定则跑默认全部实验组")
     parser.add_argument("--activation", type=str, default="softplus",
                         choices=list(ACTIVATIONS.keys()),
@@ -1040,22 +1583,44 @@ if __name__ == "__main__":
                         choices=["rprop", "adam"])
     parser.add_argument("--capture-every", type=int, default=150,
                         help="每隔多少 epoch 采集一次层输出用于几何距离")
+    parser.add_argument("--no-special", action="store_true",
+                        help="Full-PR 去掉 sin/e^x 特殊项，使用纯多项式（建议二）")
     parser.add_argument("--repeats", type=int, default=0,
-                        help=">0 时做论文 3.2 节风格的重复模拟")
+                        help=">0 时做重复模拟 + 距离-性能相关性研究")
+    parser.add_argument("--monte-carlo", type=int, default=0,
+                        help=">0 时跑大规模蒙特卡洛（该数=每配置的 seed 数），导出 Excel")
+    parser.add_argument("--excel-out", type=str, default="monte_carlo_results.xlsx",
+                        help="蒙特卡洛 Excel 输出路径")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--grid-repeats", type=int, default=50,
+                        help="默认网格里每个配置的重复次数（扫初始化 seed）")
+    parser.add_argument("--data-seed", type=int, default=0,
+                        help="默认网格里固定的数据生成 seed")
+    parser.add_argument("--out-prefix", type=str, default="results",
+                        help="默认网格 CSV/图 的输出前缀")
+    parser.add_argument("--n-jobs", type=int, default=1,
+                        help="默认网格的并行进程数（-1=用全部 CPU 核心）")
     args = parser.parse_args()
 
     scaling = tuple(float(s) for s in args.scaling.split(","))
     hidden = tuple(int(s) for s in args.h1.split(","))
+    include_special = not args.no_special
 
-    if args.repeats > 0:
-        repeat_study(case=args.case or "paper_poly2",
+    if args.monte_carlo > 0:
+        monte_carlo(epochs=args.epochs, seeds=args.monte_carlo,
+                    out_path=args.excel_out)
+    elif args.repeats > 0:
+        repeat_study(case=args.case or "paper_poly4",
                      activation=args.activation, h1=hidden[0], q=args.q,
-                     scaling=scaling, repeats=args.repeats, epochs=args.epochs)
+                     scaling=scaling, repeats=args.repeats, epochs=args.epochs,
+                     include_special=include_special)
     elif args.case is None:
-        default_grid(epochs=args.epochs)
+        default_grid(epochs=args.epochs, repeats=args.grid_repeats,
+                     data_seed=args.data_seed, out_prefix=args.out_prefix,
+                     n_jobs=args.n_jobs)
     else:
         run_experiment(case=args.case, activation=args.activation,
                        hidden_layers=hidden, q=args.q, scaling=scaling,
                        n=args.n, epochs=args.epochs, optimizer=args.optimizer,
-                       capture_every=args.capture_every, seed=args.seed)
+                       capture_every=args.capture_every, seed=args.seed,
+                       include_special=include_special)

@@ -1,31 +1,56 @@
 ﻿group,relation,x,y,spearman_rho,p_value,n
-ALL,激活改变(缩放) → NN-PR接近度(内),act_io_scaled_mean,shape_NN_FPR_in,0.5011082254189584,1.645242699519717e-190,3000
-ALL,激活改变(未缩) → NN-PR接近度(内),act_io_unscaled_mean,shape_NN_FPR_in,0.06102215739504456,0.0008256639030897547,3000
-ALL,激活改变(缩放) → NN-PR接近度(外推),act_io_scaled_mean,shape_NN_FPR_ext,0.5899386163162904,8.356545975404681e-281,3000
-ALL,相邻层非线性 → NN-PR接近度(内),act_pair_mean,shape_NN_FPR_in,0.5228113150031503,3.8705376081766484e-210,3000
-ALL,激活改变(缩放) → Taylor-PR失效,act_io_scaled_mean,TPR_mse_vs_NN,0.5850052200208801,7.12635715726791e-93,1000
-ALL,NN-PR接近度 → 性能差距,shape_NN_FPR_in,abs_rmse_gap,0.8396972946330327,0.0,3000
-paper_poly4,激活改变(缩放) → NN-PR接近度(内),act_io_scaled_mean,shape_NN_FPR_in,0.20814441196870662,2.8850696754538865e-10,900
-paper_poly4,激活改变(未缩) → NN-PR接近度(内),act_io_unscaled_mean,shape_NN_FPR_in,0.011619262199388853,0.7277612009280829,900
-paper_poly4,激活改变(缩放) → NN-PR接近度(外推),act_io_scaled_mean,shape_NN_FPR_ext,0.16346726996099004,8.206010009220323e-07,900
-paper_poly4,相邻层非线性 → NN-PR接近度(内),act_pair_mean,shape_NN_FPR_in,0.17466727160710488,1.3397486123425708e-07,900
-paper_poly4,激活改变(缩放) → Taylor-PR失效,act_io_scaled_mean,TPR_mse_vs_NN,0.2678856838081693,2.5157011342854336e-06,300
-paper_poly4,NN-PR接近度 → 性能差距,shape_NN_FPR_in,abs_rmse_gap,0.8725224599042716,1.3922331196464837e-281,900
-paper_poly3,激活改变(缩放) → NN-PR接近度(内),act_io_scaled_mean,shape_NN_FPR_in,0.18998968926891405,9.237500096684403e-09,900
-paper_poly3,激活改变(未缩) → NN-PR接近度(内),act_io_unscaled_mean,shape_NN_FPR_in,0.01914024014480693,0.5663321132253998,900
-paper_poly3,激活改变(缩放) → NN-PR接近度(外推),act_io_scaled_mean,shape_NN_FPR_ext,0.29605737466318666,1.1519376533393395e-19,900
-paper_poly3,相邻层非线性 → NN-PR接近度(内),act_pair_mean,shape_NN_FPR_in,0.15863732912783104,1.7285000979669593e-06,900
-paper_poly3,激活改变(缩放) → Taylor-PR失效,act_io_scaled_mean,TPR_mse_vs_NN,0.43411529401306737,3.223501771238019e-15,300
-paper_poly3,NN-PR接近度 → 性能差距,shape_NN_FPR_in,abs_rmse_gap,0.8359164394030117,3.443375452155624e-236,900
-smooth_nonlinear_rand,激活改变(缩放) → NN-PR接近度(内),act_io_scaled_mean,shape_NN_FPR_in,-0.005430831576649981,0.8707548692719617,900
-smooth_nonlinear_rand,激活改变(未缩) → NN-PR接近度(内),act_io_unscaled_mean,shape_NN_FPR_in,0.002617983388842109,0.937485625760685,900
-smooth_nonlinear_rand,激活改变(缩放) → NN-PR接近度(外推),act_io_scaled_mean,shape_NN_FPR_ext,0.2586374402394566,3.200018966854436e-15,900
-smooth_nonlinear_rand,相邻层非线性 → NN-PR接近度(内),act_pair_mean,shape_NN_FPR_in,0.029821458296733123,0.3715364082026885,900
-smooth_nonlinear_rand,激活改变(缩放) → Taylor-PR失效,act_io_scaled_mean,TPR_mse_vs_NN,0.8063593937508335,6.07368619178655e-70,300
-smooth_nonlinear_rand,NN-PR接近度 → 性能差距,shape_NN_FPR_in,abs_rmse_gap,0.44342997954318464,1.2119354185044138e-44,900
-smooth_nonlinear,激活改变(缩放) → NN-PR接近度(内),act_io_scaled_mean,shape_NN_FPR_in,-0.2927965777233819,2.4195881562460413e-07,300
-smooth_nonlinear,激活改变(未缩) → NN-PR接近度(内),act_io_unscaled_mean,shape_NN_FPR_in,-0.3279024417800372,5.978774731348051e-09,300
-smooth_nonlinear,激活改变(缩放) → NN-PR接近度(外推),act_io_scaled_mean,shape_NN_FPR_ext,0.19998066615739135,0.0004929270864775427,300
-smooth_nonlinear,相邻层非线性 → NN-PR接近度(内),act_pair_mean,shape_NN_FPR_in,-0.3083854551943657,4.964995555213746e-08,300
-smooth_nonlinear,激活改变(缩放) → Taylor-PR失效,act_io_scaled_mean,TPR_mse_vs_NN,0.1054981992797119,0.29619088755022455,100
-smooth_nonlinear,NN-PR接近度 → 性能差距,shape_NN_FPR_in,abs_rmse_gap,0.8479916443516039,3.7330558790392513e-84,300
+ALL,激活改变总值(缩放) → NN-PR接近度(内),act_io_scaled_sum,shape_NN_FPR_in,0.1824219377838741,7.337761294931511e-24,3000
+ALL,激活改变总值(未缩) → NN-PR接近度(内),act_io_unscaled_sum,shape_NN_FPR_in,-0.13936139160038846,1.7551895355530028e-14,3000
+ALL,激活改变总值(缩放) → NN-PR接近度(外推),act_io_scaled_sum,shape_NN_FPR_ext,0.5663891582192184,3.782412491497535e-254,3000
+ALL,激活改变总值(缩放) → 性能差距,act_io_scaled_sum,abs_rmse_gap,0.02385983062773106,0.1913832254541166,3000
+ALL,相邻层非线性 → NN-PR接近度(内),act_pair_mean,shape_NN_FPR_in,0.5361063115850939,6.928594135128899e-223,3000
+ALL,NN-PR(Full)接近度 → 性能差距,shape_NN_FPR_in,abs_rmse_gap,0.8127024289669363,0.0,3000
+ALL,NN-LayerTaylorPR接近度 → 性能差距,shape_NN_LTPR,abs_rmse_gap,0.35643428834286284,1.4355327973122684e-90,3000
+ALL,激活改变总值(缩放) → NN-LayerTaylorPR接近度,act_io_scaled_sum,shape_NN_LTPR,0.6482849565710918,0.0,3000
+ALL,NN-LayerTaylorPR ↔ NN-FullPR 接近度,shape_NN_LTPR,shape_NN_FPR_in,0.5513916144976783,2.8996709955526124e-238,3000
+ALL,LayerTaylorPR-FullPR接近度 → 性能差距,shape_LTPR_FPR,abs_rmse_gap,0.5470246405269688,8.655358033111559e-234,3000
+ALL,LayerTaylorPR-FullPR ↔ NN-FullPR 接近度,shape_LTPR_FPR,shape_NN_FPR_in,0.7214819216546141,0.0,3000
+paper_poly4,激活改变总值(缩放) → NN-PR接近度(内),act_io_scaled_sum,shape_NN_FPR_in,-0.46917211472955367,1.8707329544673476e-50,900
+paper_poly4,激活改变总值(未缩) → NN-PR接近度(内),act_io_unscaled_sum,shape_NN_FPR_in,-0.3837876207443435,5.854326983423719e-33,900
+paper_poly4,激活改变总值(缩放) → NN-PR接近度(外推),act_io_scaled_sum,shape_NN_FPR_ext,0.32193442572408826,3.7807488767695066e-23,900
+paper_poly4,激活改变总值(缩放) → 性能差距,act_io_scaled_sum,abs_rmse_gap,-0.40692174975918466,3.264096768527029e-37,900
+paper_poly4,相邻层非线性 → NN-PR接近度(内),act_pair_mean,shape_NN_FPR_in,0.14768572331009885,8.633889448205441e-06,900
+paper_poly4,NN-PR(Full)接近度 → 性能差距,shape_NN_FPR_in,abs_rmse_gap,0.848792735135064,9.060017112543366e-251,900
+paper_poly4,NN-LayerTaylorPR接近度 → 性能差距,shape_NN_LTPR,abs_rmse_gap,-0.17908140868778244,6.346349697204297e-08,900
+paper_poly4,激活改变总值(缩放) → NN-LayerTaylorPR接近度,act_io_scaled_sum,shape_NN_LTPR,0.5376639555421673,1.4464599315342588e-68,900
+paper_poly4,NN-LayerTaylorPR ↔ NN-FullPR 接近度,shape_NN_LTPR,shape_NN_FPR_in,-0.2001495889394037,1.3821988149246414e-09,900
+paper_poly4,LayerTaylorPR-FullPR接近度 → 性能差距,shape_LTPR_FPR,abs_rmse_gap,0.39453699238753787,6.806756314686203e-35,900
+paper_poly4,LayerTaylorPR-FullPR ↔ NN-FullPR 接近度,shape_LTPR_FPR,shape_NN_FPR_in,0.3465068586216926,8.707106970373751e-27,900
+paper_poly3,激活改变总值(缩放) → NN-PR接近度(内),act_io_scaled_sum,shape_NN_FPR_in,-0.2908595643818703,5.246552557805193e-19,900
+paper_poly3,激活改变总值(未缩) → NN-PR接近度(内),act_io_unscaled_sum,shape_NN_FPR_in,-0.27793656153307394,1.9891091880337962e-17,900
+paper_poly3,激活改变总值(缩放) → NN-PR接近度(外推),act_io_scaled_sum,shape_NN_FPR_ext,0.2666093825397037,4.124368633034336e-16,900
+paper_poly3,激活改变总值(缩放) → 性能差距,act_io_scaled_sum,abs_rmse_gap,-0.08527548953355013,0.010486131663280397,900
+paper_poly3,相邻层非线性 → NN-PR接近度(内),act_pair_mean,shape_NN_FPR_in,0.1465972919672019,1.0069137031503975e-05,900
+paper_poly3,NN-PR(Full)接近度 → 性能差距,shape_NN_FPR_in,abs_rmse_gap,0.8005425685710723,6.767057950900586e-202,900
+paper_poly3,NN-LayerTaylorPR接近度 → 性能差距,shape_NN_LTPR,abs_rmse_gap,0.04142916490490099,0.21435437811313976,900
+paper_poly3,激活改变总值(缩放) → NN-LayerTaylorPR接近度,act_io_scaled_sum,shape_NN_LTPR,0.6239795752077788,2.8175030255984706e-98,900
+paper_poly3,NN-LayerTaylorPR ↔ NN-FullPR 接近度,shape_NN_LTPR,shape_NN_FPR_in,-0.10502863691984138,0.0016038241104262495,900
+paper_poly3,LayerTaylorPR-FullPR接近度 → 性能差距,shape_LTPR_FPR,abs_rmse_gap,0.5115916037420314,3.504336517260997e-61,900
+paper_poly3,LayerTaylorPR-FullPR ↔ NN-FullPR 接近度,shape_LTPR_FPR,shape_NN_FPR_in,0.5152104973965415,3.610977715082186e-62,900
+smooth_nonlinear_rand,激活改变总值(缩放) → NN-PR接近度(内),act_io_scaled_sum,shape_NN_FPR_in,-0.22126356357104887,1.9191466374582827e-11,900
+smooth_nonlinear_rand,激活改变总值(未缩) → NN-PR接近度(内),act_io_unscaled_sum,shape_NN_FPR_in,-0.2828684286067462,5.0800243487530995e-18,900
+smooth_nonlinear_rand,激活改变总值(缩放) → NN-PR接近度(外推),act_io_scaled_sum,shape_NN_FPR_ext,0.5934937165454104,9.49276054464287e-87,900
+smooth_nonlinear_rand,激活改变总值(缩放) → 性能差距,act_io_scaled_sum,abs_rmse_gap,-0.4111454994209707,5.013859924192166e-38,900
+smooth_nonlinear_rand,相邻层非线性 → NN-PR接近度(内),act_pair_mean,shape_NN_FPR_in,0.08120192963572455,0.014822085912002117,900
+smooth_nonlinear_rand,NN-PR(Full)接近度 → 性能差距,shape_NN_FPR_in,abs_rmse_gap,0.504416639197497,2.928762512595307e-59,900
+smooth_nonlinear_rand,NN-LayerTaylorPR接近度 → 性能差距,shape_NN_LTPR,abs_rmse_gap,-0.2957174559185809,1.273222976436078e-19,900
+smooth_nonlinear_rand,激活改变总值(缩放) → NN-LayerTaylorPR接近度,act_io_scaled_sum,shape_NN_LTPR,0.2820011292236834,6.47108848615143e-18,900
+smooth_nonlinear_rand,NN-LayerTaylorPR ↔ NN-FullPR 接近度,shape_NN_LTPR,shape_NN_FPR_in,-0.32190071368588224,3.822470442952092e-23,900
+smooth_nonlinear_rand,LayerTaylorPR-FullPR接近度 → 性能差距,shape_LTPR_FPR,abs_rmse_gap,-0.22211934435654646,1.5984027815015617e-11,900
+smooth_nonlinear_rand,LayerTaylorPR-FullPR ↔ NN-FullPR 接近度,shape_LTPR_FPR,shape_NN_FPR_in,-0.24926863008327096,3.254997640961319e-14,900
+smooth_nonlinear,激活改变总值(缩放) → NN-PR接近度(内),act_io_scaled_sum,shape_NN_FPR_in,-0.4404975694381108,1.1364921903312495e-15,300
+smooth_nonlinear,激活改变总值(未缩) → NN-PR接近度(内),act_io_unscaled_sum,shape_NN_FPR_in,-0.5301258369024335,3.855304665566729e-23,300
+smooth_nonlinear,激活改变总值(缩放) → NN-PR接近度(外推),act_io_scaled_sum,shape_NN_FPR_ext,0.22041590047229398,0.00011849307001816996,300
+smooth_nonlinear,激活改变总值(缩放) → 性能差距,act_io_scaled_sum,abs_rmse_gap,-0.3616287119588932,1.0659495691023122e-10,300
+smooth_nonlinear,相邻层非线性 → NN-PR接近度(内),act_pair_mean,shape_NN_FPR_in,-0.22744365124412483,7.03153142072245e-05,300
+smooth_nonlinear,NN-PR(Full)接近度 → 性能差距,shape_NN_FPR_in,abs_rmse_gap,0.8563930710341224,1.5213338157102042e-87,300
+smooth_nonlinear,NN-LayerTaylorPR接近度 → 性能差距,shape_NN_LTPR,abs_rmse_gap,-0.24411789219757837,1.9074838218539833e-05,300
+smooth_nonlinear,激活改变总值(缩放) → NN-LayerTaylorPR接近度,act_io_scaled_sum,shape_NN_LTPR,0.5379563536157164,6.647530043762579e-24,300
+smooth_nonlinear,NN-LayerTaylorPR ↔ NN-FullPR 接近度,shape_NN_LTPR,shape_NN_FPR_in,-0.3841751160288044,5.476915229963713e-12,300
+smooth_nonlinear,LayerTaylorPR-FullPR接近度 → 性能差距,shape_LTPR_FPR,abs_rmse_gap,-0.08396759963999599,0.14682070831637842,300
+smooth_nonlinear,LayerTaylorPR-FullPR ↔ NN-FullPR 接近度,shape_LTPR_FPR,shape_NN_FPR_in,-0.219168657429527,0.00012976979974534708,300

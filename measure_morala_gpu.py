@@ -41,6 +41,13 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
+# 逐层泰勒展开模块（多隐层情形的多项式对照）
+try:
+    from taylor_expand import expand_nn_to_polynomial
+    _HAS_TAYLOR_EXPAND = True
+except ImportError:
+    _HAS_TAYLOR_EXPAND = False
+
 # p=20 下完整交互多项式的安全阶数上限：
 #   C(20+order, order)：order=2→231, order=3→1771, order=4→10626。
 #   超过 4 阶特征数过大、内存与拟合都吃不消，故封顶 3（max_order=min(隐层数, 3)）。
@@ -385,6 +392,9 @@ def run_experiment(case, activation, hidden_layers, device,
     act_io = activation_io_distances(model, X_te, device)
     res["act_io_mean"] = (float(np.nanmean(list(act_io.values())))
                           if act_io else float("nan"))
+    # 总值：所有激活层 u→g(u) 距离之和（随深度累积，反映整网注入的非线性总量）
+    res["act_io_sum"] = (float(np.nansum(list(act_io.values())))
+                         if act_io else float("nan"))
 
     # Taylor-PR（仅单隐层、光滑激活；p=20 下项数可观但可行，q 受 max_order 约束）
     pred_tpr = None
@@ -397,6 +407,35 @@ def run_experiment(case, activation, hidden_layers, device,
     else:
         res["TPR_mse_vs_NN"] = float("nan")
         res["TPR_mse_vs_y"] = float("nan")
+
+    # LayerTaylor-PR（逐层泰勒展开，任意层数；多隐层情形的多项式对照）
+    # 注意：逐层展开的项数随输入维度 p 与层数指数增长，高维下会组合爆炸。
+    # 故仅在 p <= LTPR_MAX_P 时启用，否则跳过（高维下成本不可接受）。
+    pred_ltpr = None
+    LTPR_MAX_P = 10
+    if _HAS_TAYLOR_EXPAND and activation != "relu" and p <= LTPR_MAX_P:
+        try:
+            ltpr_poly = expand_nn_to_polynomial(
+                model.cpu(), input_dim=p, order=min(q, SAFE_MAX_ORDER),
+                expansion_point="data", X_ref=X_tr,
+                max_total_degree=max(min(q, SAFE_MAX_ORDER), n_hidden * 2))
+            model.to(device)   # 展开需在 CPU 上取权重，完后搬回 device
+            pred_ltpr = ltpr_poly.predict(X_te)
+            res["LTPR_mse_vs_NN"] = mean_squared_error(pred_nn, pred_ltpr)
+            res["LTPR_mse_vs_y"] = mean_squared_error(y_te, pred_ltpr)
+            res["LTPR_n_terms"] = ltpr_poly.n_terms
+            res["shape_NN_LTPR"] = surface_shape_distance(X_te, pred_nn, pred_ltpr)
+        except Exception:
+            model.to(device)
+            res["LTPR_mse_vs_NN"] = float("nan")
+            res["LTPR_mse_vs_y"] = float("nan")
+            res["LTPR_n_terms"] = float("nan")
+            res["shape_NN_LTPR"] = float("nan")
+    else:
+        res["LTPR_mse_vs_NN"] = float("nan")
+        res["LTPR_mse_vs_y"] = float("nan")
+        res["LTPR_n_terms"] = float("nan")
+        res["shape_NN_LTPR"] = float("nan")
 
     # Full-PR
     pred_fpr, fpr_model = fit_full_pr(X_tr, y_tr, X_te, max_order, include_special)
@@ -474,32 +513,42 @@ def run_grid(device, n=10000, p=20, epochs=300, batch_size=512,
     # 聚合表
     gk = ["case", "activation", "hidden", "special", "well_specified"]
     agg = ["NN_mse_vs_y", "FPR_mse_vs_y", "FPR_mse_vs_NN", "act_io_mean",
+           "act_io_sum", "LTPR_mse_vs_NN", "shape_NN_LTPR",
            "shape_NN_FPR_in", "shape_NN_FPR_ext", "NN_FPR_log10"]
     g = df.groupby(gk)[agg].agg(["mean", "std"])
-    print(f"\n{'='*140}")
-    print(f"聚合汇总（每格 {repeats} 次重复 均值±标准差；★=正好命中）")
-    print(f"{'='*140}")
+    print(f"\n{'='*168}")
+    print(f"聚合汇总（每格 {repeats} 次重复 均值±标准差；★=正好命中；"
+          f"LTPR=逐层泰勒展开，p>10 时跳过显示—）")
+    print(f"{'='*168}")
     print(f"{'case':<20}{'act':<9}{'hid':<11}{'sp':<4}{'命中':<5}"
-          f"{'NN_mse':>16}{'FPR_mse':>16}{'act_io':>14}{'shape_in':>16}{'shape_ext':>16}")
-    print('-'*140)
+          f"{'NN_mse':>16}{'FPR_mse':>16}{'LTPR vs NN':>16}{'形NN-LTPR':>16}"
+          f"{'act_io':>14}{'shape_in':>16}{'shape_ext':>16}")
+    print('-'*168)
     prev = None
     for idx, sub in g.iterrows():
         case, act, hid, sp, ws = idx
         if prev is not None and case != prev:
-            print('-'*140)
+            print('-'*168)
         prev = case
-        ms = lambda c: f"{sub[(c,'mean')]:.4f}±{sub[(c,'std')]:.4f}"
+        def ms(c):
+            mv = sub[(c, 'mean')]
+            if math.isnan(mv):
+                return f"{'—':>14}"
+            return f"{mv:.4f}±{sub[(c,'std')]:.4f}"
         print(f"{case:<20}{act:<9}{hid:<11}{'Y' if sp else 'N':<4}"
               f"{'*' if ws else ' ':<5}{ms('NN_mse_vs_y'):>16}{ms('FPR_mse_vs_y'):>16}"
+              f"{ms('LTPR_mse_vs_NN'):>16}{ms('shape_NN_LTPR'):>16}"
               f"{ms('act_io_mean'):>14}{ms('shape_NN_FPR_in'):>16}{ms('shape_NN_FPR_ext'):>16}")
-    print('='*140)
+    print('='*168)
 
     # 相关性表
     corr_pairs = [
-        ("act_io_mean", "shape_NN_FPR_in", "act-change -> NN-PR closeness(in)"),
-        ("act_io_mean", "shape_NN_FPR_ext", "act-change -> closeness(extrap)"),
-        ("act_io_mean", "TPR_mse_vs_NN", "act-change -> Taylor-PR failure"),
-        ("shape_NN_FPR_in", "abs_rmse_gap", "closeness -> perf gap"),
+        ("act_io_sum", "shape_NN_FPR_in", "act-change(sum) -> NN-PR closeness(in)"),
+        ("act_io_sum", "shape_NN_FPR_ext", "act-change(sum) -> closeness(extrap)"),
+        ("act_io_sum", "abs_rmse_gap", "act-change(sum) -> perf gap"),
+        ("shape_NN_FPR_in", "abs_rmse_gap", "NN-FullPR closeness -> perf gap"),
+        ("shape_NN_LTPR", "abs_rmse_gap", "NN-LayerTaylorPR closeness -> perf gap"),
+        ("shape_NN_LTPR", "shape_NN_FPR_in", "NN-LayerTaylorPR vs NN-FullPR"),
     ]
     recs = []
     for gname, gdf in [("ALL", df)] + [(c, df[df.case == c]) for c in df.case.unique()]:
@@ -553,7 +602,7 @@ def _plots(df, corr_pairs, out_prefix):
     colors = {"softplus": "#2a9d8f", "tanh": "#e76f51", "sigmoid": "#264653"}
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    for ax, col, title in [(axes[0], "act_io_mean", "activation change u->g(u)"),
+    for ax, col, title in [(axes[0], "act_io_sum", "activation change u->g(u) (sum)"),
                            (axes[1], "shape_NN_FPR_in", "NN-FullPR shape (in)")]:
         data = [df[df.activation == a][col].dropna().values for a in acts]
         bp = ax.boxplot(data, labels=acts, patch_artist=True)
@@ -563,7 +612,7 @@ def _plots(df, corr_pairs, out_prefix):
     fig.suptitle(f"High-dim (n=10000,p=20) metrics by activation")
     fig.tight_layout(); fig.savefig(f"{out_prefix}_boxplot.png", dpi=130); plt.close(fig)
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
     for ax, (x, y, label) in zip(axes.ravel(), corr_pairs):
         for a in acts:
             sub = df[df.activation == a][[x, y]].dropna()
