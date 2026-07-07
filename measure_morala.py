@@ -1167,6 +1167,22 @@ def _flatten_result(r):
     else:
         row["abs_rmse_gap"] = float("nan")
         row["NN_FPR_log10"] = float("nan")
+    nn = row.get("NN_mse_vs_y")
+    if nn is not None and nn > 0:
+        for short, mse_col in [
+            ("FPR", "FPR_mse_vs_y"),
+            ("TPR", "TPR_mse_vs_y"),
+            ("LTPR", "LTPR_mse_vs_y"),
+        ]:
+            mv = row.get(mse_col)
+            if mv is not None and not math.isnan(mv):
+                row[f"{short}_mse_delta_vs_NN"] = mv - nn
+                row[f"{short}_improve_vs_NN_pct"] = 100.0 * (nn - mv) / nn
+                row[f"{short}_better_than_NN"] = mv < nn
+            else:
+                row[f"{short}_mse_delta_vs_NN"] = float("nan")
+                row[f"{short}_improve_vs_NN_pct"] = float("nan")
+                row[f"{short}_better_than_NN"] = float("nan")
     return row
 
 
@@ -1350,7 +1366,9 @@ def default_grid(epochs, repeats=50, data_seed=0, out_prefix="results",
     agg_cols = ["NN_mse_vs_y", "FPR_mse_vs_y", "FPR_mse_vs_NN", "TPR_mse_vs_NN",
                 "LTPR_mse_vs_NN", "shape_NN_LTPR",
                 "act_io_scaled_mean", "act_io_unscaled_mean",
-                "shape_NN_FPR_in", "shape_NN_FPR_ext", "NN_FPR_log10"]
+                "shape_NN_FPR_in", "shape_NN_FPR_ext", "NN_FPR_log10",
+                "FPR_improve_vs_NN_pct", "TPR_improve_vs_NN_pct",
+                "LTPR_improve_vs_NN_pct"]
     g = df.groupby(gk)[agg_cols].agg(["mean", "std"])
 
     print(f"\n{'═' * 178}")
@@ -1446,9 +1464,10 @@ def default_grid(epochs, repeats=50, data_seed=0, out_prefix="results",
     print(f"  {corr_csv} （相关性摘要）")
     if plotted:
         cases = sorted(df["case"].unique())
-        print(f"  按数据集分别出图（每个数据集 2 张：_geometry.png / _mse.png）：")
+        print(f"  按数据集分别出图（每个数据集 3 张：_geometry.png / _mse.png / _nn_baseline.png）：")
         for c in cases:
-            print(f"    {out_prefix}_{c}_geometry.png, {out_prefix}_{c}_mse.png")
+            print(f"    {out_prefix}_{c}_geometry.png, {out_prefix}_{c}_mse.png, "
+                  f"{out_prefix}_{c}_nn_baseline.png")
         print(f"  {out_prefix}_overview_boxplot.png （总览箱线图）")
     return df, corr_df
 
@@ -1456,9 +1475,10 @@ def default_grid(epochs, repeats=50, data_seed=0, out_prefix="results",
 def _make_plots(df, corr_pairs, out_prefix):
     """
     按数据集分别出图，避免不同数据集混在一张图里互相掩盖（Simpson 悖论）。
-    每个数据集生成两张图：
+    每个数据集生成三张图：
       <prefix>_<case>_geometry.png  —— 几何距离 vs 接近度/性能（散点，按激活着色）
       <prefix>_<case>_mse.png       —— 各测量指标 vs MSE、以及模型间表现关系
+      <prefix>_<case>_nn_baseline.png —— 以 NN 为基准，显示哪个模型更好
     另外保留一张总览箱线图。
     """
     import matplotlib
@@ -1467,6 +1487,11 @@ def _make_plots(df, corr_pairs, out_prefix):
 
     acts = ["softplus", "tanh", "sigmoid"]
     colors = {"softplus": "#2a9d8f", "tanh": "#e76f51", "sigmoid": "#264653"}
+    compare_models = [
+        ("FPR", "FullPR"),
+        ("TPR", "Taylor-PR"),
+        ("LTPR", "LayerTaylor-PR"),
+    ]
 
     en_label = {
         ("act_io_scaled_sum", "shape_NN_FPR_in"):  "act-change(sum,scaled) -> NN-FullPR closeness(in)",
@@ -1534,6 +1559,50 @@ def _make_plots(df, corr_pairs, out_prefix):
         fig.suptitle(title, fontsize=13)
         fig.tight_layout(); fig.savefig(path, dpi=130); plt.close(fig)
 
+    def nn_baseline_grid(sub_df, title, path):
+        rows = []
+        for short, name in compare_models:
+            pct_col = f"{short}_improve_vs_NN_pct"
+            win_col = f"{short}_better_than_NN"
+            if pct_col not in sub_df.columns or win_col not in sub_df.columns:
+                continue
+            for act in acts:
+                s = sub_df[sub_df["activation"] == act][[pct_col, win_col]].dropna()
+                if len(s) == 0:
+                    continue
+                rows.append((name, act, float(s[win_col].mean() * 100.0),
+                             float(s[pct_col].median())))
+        if not rows:
+            return
+        models = list(dict.fromkeys(r[0] for r in rows))
+        x = np.arange(len(models))
+        width = 0.24
+        offsets = np.linspace(-width, width, len(acts))
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharex=True)
+        for i, act in enumerate(acts):
+            win_vals, imp_vals = [], []
+            for model in models:
+                hit = [r for r in rows if r[0] == model and r[1] == act]
+                win_vals.append(hit[0][2] if hit else np.nan)
+                imp_vals.append(hit[0][3] if hit else np.nan)
+            axes[0].bar(x + offsets[i], win_vals, width=width, color=colors[act],
+                        alpha=0.75, label=act)
+            axes[1].bar(x + offsets[i], imp_vals, width=width, color=colors[act],
+                        alpha=0.75, label=act)
+        axes[0].axhline(50, color="k", lw=0.8, ls="--", alpha=0.5)
+        axes[0].set_ylabel("win rate vs NN (%)")
+        axes[0].set_title("How often model MSE < NN MSE", fontsize=10)
+        axes[1].axhline(0, color="k", lw=0.8, ls="--", alpha=0.6)
+        axes[1].set_ylabel("median improvement vs NN (%)")
+        axes[1].set_title("Positive means better than NN", fontsize=10)
+        for ax in axes:
+            ax.set_xticks(x)
+            ax.set_xticklabels(models, rotation=15, ha="right")
+            ax.grid(axis="y", alpha=0.3)
+            ax.legend(fontsize=8)
+        fig.suptitle(title, fontsize=13)
+        fig.tight_layout(); fig.savefig(path, dpi=130); plt.close(fig)
+
     # ── 按数据集分别出图 ──
     for case in sorted(df["case"].unique()):
         sub = df[df["case"] == case]
@@ -1543,6 +1612,9 @@ def _make_plots(df, corr_pairs, out_prefix):
         mse_grid(sub,
                  f"[{case}] Measurements vs MSE & model-vs-model performance",
                  f"{out_prefix}_{case}_mse.png")
+        nn_baseline_grid(sub,
+                         f"[{case}] Models vs NN baseline",
+                         f"{out_prefix}_{case}_nn_baseline.png")
 
     # ── 总览箱线图（按激活函数，跨全部数据集）──
     fig, axes = plt.subplots(1, 3, figsize=(16, 5))

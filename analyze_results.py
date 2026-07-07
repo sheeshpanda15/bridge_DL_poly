@@ -32,6 +32,12 @@ from scipy.stats import spearmanr
 ACTS = ["softplus", "tanh", "sigmoid"]
 COLORS = {"softplus": "#2a9d8f", "tanh": "#e76f51", "sigmoid": "#264653"}
 
+COMPARE_MODELS = [
+    ("FPR", "FullPR", "FPR_mse_vs_y"),
+    ("TPR", "Taylor-PR", "TPR_mse_vs_y"),
+    ("LTPR", "LayerTaylor-PR", "LTPR_mse_vs_y"),
+]
+
 
 # ─────────────────────────────────────────────
 # 1. 数据清洗
@@ -75,6 +81,44 @@ def ltpr_failure_table(df):
         n_failed=("ltpr_failed", "sum"))
     g["fail_rate"] = (g["n_failed"] / g["n"]).round(3)
     return g.reset_index()
+
+
+def add_nn_baseline_columns(df):
+    """Add model-vs-NN deltas. Positive improvement means the model beats NN."""
+    df = df.copy()
+    if "NN_mse_vs_y" not in df.columns:
+        return df
+    nn = df["NN_mse_vs_y"].replace(0, np.nan)
+    for short, _name, mse_col in COMPARE_MODELS:
+        if mse_col not in df.columns:
+            continue
+        df[f"{short}_mse_delta_vs_NN"] = df[mse_col] - df["NN_mse_vs_y"]
+        df[f"{short}_improve_vs_NN_pct"] = 100.0 * (df["NN_mse_vs_y"] - df[mse_col]) / nn
+        df[f"{short}_better_than_NN"] = df[mse_col] < df["NN_mse_vs_y"]
+    return df
+
+
+def nn_baseline_table(df):
+    """Summarize who beats NN for each comparable model."""
+    recs = []
+    for case, gdf in [("ALL", df)] + [(c, df[df["case"] == c]) for c in sorted(df["case"].unique())]:
+        for short, name, mse_col in COMPARE_MODELS:
+            pct_col = f"{short}_improve_vs_NN_pct"
+            win_col = f"{short}_better_than_NN"
+            if pct_col not in gdf.columns or win_col not in gdf.columns:
+                continue
+            m = gdf[[pct_col, win_col]].dropna()
+            if len(m) == 0:
+                continue
+            recs.append({
+                "case": case,
+                "model": name,
+                "n": len(m),
+                "win_rate_vs_NN": float(m[win_col].mean()),
+                "median_improve_vs_NN_pct": float(m[pct_col].median()),
+                "mean_improve_vs_NN_pct": float(m[pct_col].mean()),
+            })
+    return pd.DataFrame(recs)
 
 
 # ─────────────────────────────────────────────
@@ -154,6 +198,58 @@ def plots_for_case(df, case, out_prefix):
         fig.tight_layout(); fig.savefig(f"{out_prefix}_{case}_ltpr_failure.png", dpi=130)
         plt.close(fig)
 
+    plot_nn_baseline(sub, f"{out_prefix}_{case}_nn_baseline.png",
+                     f"[{case}] Models vs NN baseline")
+
+
+def plot_nn_baseline(sub, path, title):
+    rows = []
+    for short, name, _mse_col in COMPARE_MODELS:
+        pct_col = f"{short}_improve_vs_NN_pct"
+        win_col = f"{short}_better_than_NN"
+        if pct_col not in sub.columns or win_col not in sub.columns:
+            continue
+        for act in ACTS:
+            s = sub[sub["activation"] == act][[pct_col, win_col]].dropna()
+            if len(s) == 0:
+                continue
+            rows.append((name, act, float(s[win_col].mean() * 100.0),
+                         float(s[pct_col].median()), len(s)))
+    if not rows:
+        return
+
+    models = list(dict.fromkeys(r[0] for r in rows))
+    x = np.arange(len(models))
+    width = 0.24
+    offsets = np.linspace(-width, width, len(ACTS))
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharex=True)
+    for i, act in enumerate(ACTS):
+        vals_win, vals_imp = [], []
+        for model in models:
+            hit = [r for r in rows if r[0] == model and r[1] == act]
+            vals_win.append(hit[0][2] if hit else np.nan)
+            vals_imp.append(hit[0][3] if hit else np.nan)
+        axes[0].bar(x + offsets[i], vals_win, width=width, color=COLORS[act],
+                    alpha=0.75, label=act)
+        axes[1].bar(x + offsets[i], vals_imp, width=width, color=COLORS[act],
+                    alpha=0.75, label=act)
+
+    axes[0].axhline(50, color="k", lw=0.8, ls="--", alpha=0.5)
+    axes[0].set_ylabel("win rate vs NN (%)")
+    axes[0].set_title("How often model MSE < NN MSE", fontsize=10)
+    axes[1].axhline(0, color="k", lw=0.8, ls="--", alpha=0.6)
+    axes[1].set_ylabel("median improvement vs NN (%)")
+    axes[1].set_title("Positive means better than NN", fontsize=10)
+    for ax in axes:
+        ax.set_xticks(x)
+        ax.set_xticklabels(models, rotation=15, ha="right")
+        ax.grid(axis="y", alpha=0.3)
+        ax.legend(fontsize=8)
+    fig.suptitle(title, fontsize=13)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
 
 # ─────────────────────────────────────────────
 # 4. 清洗后的相关性（稳健：Spearman 对单调失效不敏感，但仍排除 NN 未收敛）
@@ -198,6 +294,7 @@ if __name__ == "__main__":
     print(f"读入 {args.csv}：{len(df)} 行")
 
     df_clean, report = clean(df, args.nn_thresh, args.ltpr_thresh)
+    df_clean = add_nn_baseline_columns(df_clean)
     print(f"\n清洗报告：")
     print(f"  剔除未收敛 NN run：{report['nn_unconverged_removed']} 个")
     print(f"  LayerTaylor-PR 失效（MSE>{args.ltpr_thresh}）："
@@ -211,6 +308,13 @@ if __name__ == "__main__":
         top = ft.sort_values("fail_rate", ascending=False).head(10)
         print(top.to_string(index=False))
         ft.to_csv(f"{args.out_prefix}_ltpr_failure_rate.csv",
+                  index=False, encoding="utf-8-sig")
+
+    bt = nn_baseline_table(df_clean)
+    if len(bt):
+        print(f"\nModels vs NN baseline:")
+        print(bt.to_string(index=False))
+        bt.to_csv(f"{args.out_prefix}_nn_baseline_summary.csv",
                   index=False, encoding="utf-8-sig")
 
     # 相关性
@@ -233,5 +337,7 @@ if __name__ == "__main__":
     print(f"\n已输出：")
     print(f"  {args.out_prefix}_<case>_clean_geom.png   （每数据集：清洗后核心关系）")
     print(f"  {args.out_prefix}_<case>_ltpr_failure.png （每数据集：LTPR 失效 log 图）")
+    print(f"  {args.out_prefix}_<case>_nn_baseline.png  （每数据集：以 NN 为基准的胜负图）")
     print(f"  {args.out_prefix}_correlations.csv")
     print(f"  {args.out_prefix}_ltpr_failure_rate.csv")
+    print(f"  {args.out_prefix}_nn_baseline_summary.csv")

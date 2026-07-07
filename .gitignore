@@ -1,0 +1,43 @@
+# Python cache / local environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+.ipynb_checkpoints/
+
+# Runtime logs and process markers
+*.log
+*.err
+*.pid
+
+# Render / temporary QA folders
+render_*/
+render*/
+tmp/
+temp/
+
+# Smoke-test outputs
+smoke_*
+
+# Intermediate measure-weighted experiment runs.
+# Keep the combined grand outputs and final reports; ignore per-run/sensitivity files.
+measure_weighted_sampling_p20*
+measure_weighted_sampling_paper_p20*
+measure_weighted_sampling_stress_p20*
+measure_weighted_sampling_grand_p20*
+measure_weighted_sampling_grand_p50*
+measure_weighted_sampling_grand_mean_p20*
+measure_weighted_sampling_grand_mean_p50*
+
+# Misc scratch outlines
+*_outline.txt
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

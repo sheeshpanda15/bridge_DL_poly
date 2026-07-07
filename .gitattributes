@@ -1,0 +1,8 @@
+*.docx binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.csv text
+*.md text
+*.py text

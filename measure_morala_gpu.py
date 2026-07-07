@@ -465,6 +465,21 @@ def run_experiment(case, activation, hidden_layers, device,
     else:
         res["abs_rmse_gap"] = float("nan")
         res["NN_FPR_log10"] = float("nan")
+    if nn_mse > 0:
+        for short, mse_col in [
+            ("FPR", "FPR_mse_vs_y"),
+            ("TPR", "TPR_mse_vs_y"),
+            ("LTPR", "LTPR_mse_vs_y"),
+        ]:
+            mv = res.get(mse_col)
+            if mv is not None and not math.isnan(mv):
+                res[f"{short}_mse_delta_vs_NN"] = mv - nn_mse
+                res[f"{short}_improve_vs_NN_pct"] = 100.0 * (nn_mse - mv) / nn_mse
+                res[f"{short}_better_than_NN"] = mv < nn_mse
+            else:
+                res[f"{short}_mse_delta_vs_NN"] = float("nan")
+                res[f"{short}_improve_vs_NN_pct"] = float("nan")
+                res[f"{short}_better_than_NN"] = float("nan")
 
     if verbose:
         print(f"  [{case} {activation} h={hidden_layers} sp={include_special}] "
@@ -514,7 +529,9 @@ def run_grid(device, n=10000, p=20, epochs=300, batch_size=512,
     gk = ["case", "activation", "hidden", "special", "well_specified"]
     agg = ["NN_mse_vs_y", "FPR_mse_vs_y", "FPR_mse_vs_NN", "act_io_mean",
            "act_io_sum", "LTPR_mse_vs_NN", "shape_NN_LTPR",
-           "shape_NN_FPR_in", "shape_NN_FPR_ext", "NN_FPR_log10"]
+           "shape_NN_FPR_in", "shape_NN_FPR_ext", "NN_FPR_log10",
+           "FPR_improve_vs_NN_pct", "TPR_improve_vs_NN_pct",
+           "LTPR_improve_vs_NN_pct"]
     g = df.groupby(gk)[agg].agg(["mean", "std"])
     print(f"\n{'='*168}")
     print(f"聚合汇总（每格 {repeats} 次重复 均值±标准差；★=正好命中；"
@@ -600,6 +617,7 @@ def _plots(df, corr_pairs, out_prefix):
     import matplotlib.pyplot as plt
     acts = ["softplus", "tanh", "sigmoid"]
     colors = {"softplus": "#2a9d8f", "tanh": "#e76f51", "sigmoid": "#264653"}
+    compare_models = [("FPR", "FullPR"), ("TPR", "Taylor-PR"), ("LTPR", "LayerTaylor-PR")]
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     for ax, col, title in [(axes[0], "act_io_sum", "activation change u->g(u) (sum)"),
@@ -621,6 +639,49 @@ def _plots(df, corr_pairs, out_prefix):
         ax.grid(alpha=0.3); ax.legend(fontsize=8)
     fig.suptitle("Geometric distance vs closeness/performance (high-dim)")
     fig.tight_layout(); fig.savefig(f"{out_prefix}_scatter.png", dpi=130); plt.close(fig)
+
+    rows = []
+    for short, name in compare_models:
+        pct_col = f"{short}_improve_vs_NN_pct"
+        win_col = f"{short}_better_than_NN"
+        if pct_col not in df.columns or win_col not in df.columns:
+            continue
+        for act in acts:
+            sub = df[df.activation == act][[pct_col, win_col]].dropna()
+            if len(sub) == 0:
+                continue
+            rows.append((name, act, float(sub[win_col].mean() * 100.0),
+                         float(sub[pct_col].median())))
+    if rows:
+        models = list(dict.fromkeys(r[0] for r in rows))
+        x = np.arange(len(models))
+        width = 0.24
+        offsets = np.linspace(-width, width, len(acts))
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharex=True)
+        for i, act in enumerate(acts):
+            win_vals, imp_vals = [], []
+            for model in models:
+                hit = [r for r in rows if r[0] == model and r[1] == act]
+                win_vals.append(hit[0][2] if hit else np.nan)
+                imp_vals.append(hit[0][3] if hit else np.nan)
+            axes[0].bar(x + offsets[i], win_vals, width=width, color=colors[act],
+                        alpha=0.75, label=act)
+            axes[1].bar(x + offsets[i], imp_vals, width=width, color=colors[act],
+                        alpha=0.75, label=act)
+        axes[0].axhline(50, color="k", lw=0.8, ls="--", alpha=0.5)
+        axes[0].set_ylabel("win rate vs NN (%)")
+        axes[0].set_title("How often model MSE < NN MSE", fontsize=10)
+        axes[1].axhline(0, color="k", lw=0.8, ls="--", alpha=0.6)
+        axes[1].set_ylabel("median improvement vs NN (%)")
+        axes[1].set_title("Positive means better than NN", fontsize=10)
+        for ax in axes:
+            ax.set_xticks(x)
+            ax.set_xticklabels(models, rotation=15, ha="right")
+            ax.grid(axis="y", alpha=0.3)
+            ax.legend(fontsize=8)
+        fig.suptitle("High-dim models vs NN baseline", fontsize=13)
+        fig.tight_layout(); fig.savefig(f"{out_prefix}_nn_baseline.png", dpi=130)
+        plt.close(fig)
 
 
 # ─────────────────────────────────────────────
