@@ -54,34 +54,44 @@ def make_diff(summary):
 
 
 def plot_curves(df):
+    devices = [d for d in ["cpu", "cuda"] if d in set(df["device"])]
+    devices.extend(d for d in sorted(set(df["device"])) if d not in devices)
+    p_values = sorted(df["p"].unique())
     for metric, random_metric, ylabel, suffix in [
         ("dopt_mse_vs_nn", "random_mse_median", "MSE vs NN oracle", "mse_curve"),
         ("mse_gain_vs_random_median_pct", None,
          "D-optimal gain vs random median MSE (%)", "gain_curve"),
     ]:
-        fig, axes = plt.subplots(2, 2, figsize=(12.5, 8.5), sharex=False)
-        axes = axes.ravel()
-        panels = [
-            ("cpu", 20), ("cuda", 20),
-            ("cpu", 50), ("cuda", 50),
-        ]
-        for ax, (device, p) in zip(axes, panels):
-            part = df[(df["device"] == device) & (df["p"] == p)]
-            for case, sub in part.groupby("case"):
-                sub = sub.sort_values("iteration")
-                label = "Quadratic" if case == "highdim_poly2" else "Smooth"
-                ax.plot(sub["selected_n"], sub[metric], marker="o", label=label)
-                if random_metric:
-                    ax.plot(sub["selected_n"], sub[random_metric],
-                            marker="x", linestyle="--", alpha=0.75,
-                            label=f"{label} random")
-            if metric.endswith("pct"):
-                ax.axhline(0, color="#555555", linewidth=1)
-            ax.set_title(f"{device.upper()} / p={p}")
-            ax.set_xlabel("Selected training points")
-            ax.set_ylabel(ylabel)
-            ax.grid(True, linestyle=":", alpha=0.65)
-            ax.legend(frameon=False, fontsize=8)
+        fig, axes = plt.subplots(
+            len(devices), len(p_values),
+            figsize=(5.8 * len(p_values), 4.1 * len(devices)),
+            sharex=False,
+            squeeze=False,
+        )
+        for row_idx, device in enumerate(devices):
+            for col_idx, p in enumerate(p_values):
+                ax = axes[row_idx, col_idx]
+                part = df[(df["device"] == device) & (df["p"] == p)]
+                for case, sub in part.groupby("case"):
+                    sub = sub.sort_values("iteration")
+                    label = {
+                        "highdim_poly2": "Quadratic",
+                        "highdim_smooth": "Smooth",
+                        "highdim_strong": "Strong nonlinear",
+                    }.get(case, case)
+                    ax.plot(sub["selected_n"], sub[metric], marker="o", label=label)
+                    if random_metric:
+                        ax.plot(sub["selected_n"], sub[random_metric],
+                                marker="x", linestyle="--", alpha=0.75,
+                                label=f"{label} random")
+                if metric.endswith("pct"):
+                    ax.axhline(0, color="#555555", linewidth=1)
+                ax.set_title(f"{device.upper()} / p={p}")
+                ax.set_xlabel("Selected training points")
+                ax.set_ylabel(ylabel)
+                ax.grid(True, linestyle=":", alpha=0.65)
+                if len(part):
+                    ax.legend(frameon=False, fontsize=8)
         fig.tight_layout()
         fig.savefig(f"{OUT_PREFIX}_{suffix}.png", dpi=220)
         plt.close(fig)

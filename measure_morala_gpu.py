@@ -1,7 +1,7 @@
 """
 measure_morala_gpu.py
 ─────────────────────────────────────────────────────────────────
-大规模 GPU 版本：n = 10000 样本、p = 20 维输入的模拟。
+大规模 GPU 版本：n = 10000 样本、p = 10/20/50 三组输入维度的模拟。
 
 与 measure_morala.py（小规模 CPU 版）的关键差异：
   1. 神经网络训练在 GPU 上进行（此规模 GPU 才真正有意义：
@@ -16,7 +16,8 @@ measure_morala_gpu.py
 用法（Windows）：
   python measure_morala_gpu.py                     # 默认实验组
   python measure_morala_gpu.py --device cuda       # 强制 GPU
-  python measure_morala_gpu.py --n 10000 --p 20 --epochs 300
+  python measure_morala_gpu.py --n 10000 --p-values 10 20 50 --epochs 300
+  python measure_morala_gpu.py --n 10000 --p 20 --epochs 300  # 单组 p 调试
   python measure_morala_gpu.py --repeats 20 --out-prefix gpu_results
 
 先确认 GPU 可用：
@@ -615,6 +616,7 @@ def _plots(df, corr_pairs, out_prefix):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    p_label = ",".join(str(x) for x in sorted(df["p"].unique()))
     acts = ["softplus", "tanh", "sigmoid"]
     colors = {"softplus": "#2a9d8f", "tanh": "#e76f51", "sigmoid": "#264653"}
     compare_models = [("FPR", "FullPR"), ("TPR", "Taylor-PR"), ("LTPR", "LayerTaylor-PR")]
@@ -627,7 +629,7 @@ def _plots(df, corr_pairs, out_prefix):
         for patch, a in zip(bp["boxes"], acts):
             patch.set_facecolor(colors[a]); patch.set_alpha(0.6)
         ax.set_title(title); ax.set_ylabel(col); ax.grid(alpha=0.3)
-    fig.suptitle(f"High-dim (n=10000,p=20) metrics by activation")
+    fig.suptitle(f"High-dim (n=10000,p={p_label}) metrics by activation")
     fig.tight_layout(); fig.savefig(f"{out_prefix}_boxplot.png", dpi=130); plt.close(fig)
 
     fig, axes = plt.subplots(2, 3, figsize=(16, 9))
@@ -686,10 +688,13 @@ def _plots(df, corr_pairs, out_prefix):
 
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="高维 GPU 版 Morala 实验 (n=10000, p=20)")
+    ap = argparse.ArgumentParser(description="高维 GPU 版 Morala 实验 (n=10000, p=10/20/50)")
     ap.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     ap.add_argument("--n", type=int, default=10000)
-    ap.add_argument("--p", type=int, default=20)
+    ap.add_argument("--p", type=int, default=None,
+                    help="Run a single p value; overrides --p-values.")
+    ap.add_argument("--p-values", type=int, nargs="*", default=[10, 20, 50],
+                    help="Input dimensions to run when --p is not set.")
     ap.add_argument("--epochs", type=int, default=300)
     ap.add_argument("--batch-size", type=int, default=512)
     ap.add_argument("--repeats", type=int, default=10)
@@ -706,15 +711,20 @@ if __name__ == "__main__":
     if device.type == "cuda":
         print(f"  GPU: {torch.cuda.get_device_name(0)}")
 
+    p_values = [args.p] if args.p is not None else args.p_values
     if args.case is not None:
         # 单配置调试
         hidden = tuple(int(x) for x in args.hidden.split(","))
-        r = run_experiment(args.case, args.activation, hidden, device,
-                           n=args.n, p=args.p, epochs=args.epochs,
-                           batch_size=args.batch_size, verbose=True)
-        for k, v in r.items():
-            print(f"  {k}: {v}")
+        for p in p_values:
+            print(f"p={p}")
+            r = run_experiment(args.case, args.activation, hidden, device,
+                               n=args.n, p=p, epochs=args.epochs,
+                               batch_size=args.batch_size, verbose=True)
+            for k, v in r.items():
+                print(f"  {k}: {v}")
     else:
-        run_grid(device, n=args.n, p=args.p, epochs=args.epochs,
-                 batch_size=args.batch_size, repeats=args.repeats,
-                 data_seed=args.data_seed, out_prefix=args.out_prefix)
+        for p in p_values:
+            out_prefix = args.out_prefix if len(p_values) == 1 else f"{args.out_prefix}_p{p}"
+            run_grid(device, n=args.n, p=p, epochs=args.epochs,
+                     batch_size=args.batch_size, repeats=args.repeats,
+                     data_seed=args.data_seed, out_prefix=out_prefix)

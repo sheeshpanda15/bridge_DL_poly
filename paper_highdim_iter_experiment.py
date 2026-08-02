@@ -479,7 +479,7 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=10000)
-    parser.add_argument("--p-values", type=int, nargs="*", default=[20, 50])
+    parser.add_argument("--p-values", type=int, nargs="*", default=[10, 20, 50])
     parser.add_argument("--cases", nargs="*", default=CASE_ORDER,
                         choices=CASE_ORDER)
     parser.add_argument("--data-seeds", type=int, nargs="*", default=[0, 1, 2])

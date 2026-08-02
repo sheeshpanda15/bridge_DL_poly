@@ -3,7 +3,7 @@ High-dimensional iterative D-optimal transfer experiment.
 
 This script is the paper-scale version of the pilot-D-optimal idea:
 
-1. Generate an original dataset with n=10000 and p in {20, 50}.
+1. Generate an original dataset with n=10000 and p in {10, 20, 50}.
 2. Train a full NN oracle on the original training split.
 3. Start from a small uniform pilot/design set.
 4. Fit a FullPR surrogate to the NN oracle on the current design set.
@@ -469,7 +469,7 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=10000)
-    parser.add_argument("--p-values", type=int, nargs="*", default=[20, 50])
+    parser.add_argument("--p-values", type=int, nargs="*", default=[10, 20, 50])
     parser.add_argument("--cases", nargs="*", default=["highdim_poly2", "highdim_smooth"],
                         choices=["highdim_poly2", "highdim_smooth", "highdim_strong"])
     parser.add_argument("--degree", type=int, default=2)
