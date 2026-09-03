@@ -104,10 +104,16 @@ def write_report(df, summary, diff):
         diff["mse_gain_vs_random_median_pct_gpu"])
     avg_abs_gain_diff = diff[
         "mse_gain_vs_random_median_pct_gpu_minus_cpu"].abs().mean()
+    n_matched = len(diff)
     feature_rows = (
         summary[["p", "n_fullpr_features", "n_design_params"]]
         .drop_duplicates()
         .sort_values("p")
+    )
+    feature_note = "；".join(
+        f"p={int(row.p)} 时 FullPR={int(row.n_fullpr_features)}、"
+        f"D-opt参数={int(row.n_design_params)}"
+        for row in feature_rows.itertuples(index=False)
     )
     settings = summary.iloc[0]
     lines = [
@@ -136,7 +142,7 @@ def write_report(df, summary, diff):
         "",
         "## CPU/GPU 一致性",
         "",
-        f"最后一轮 4 个匹配组合上，CPU 与 GPU 的 MSE gain 平均绝对差为 `{avg_abs_gain_diff:.2f}` 个百分点；相关系数为 `{gain_corr:.3f}`，但由于只有 4 个匹配点，这个相关值不作为主要结论。更重要的是，CPU/GPU 在最后一轮均显示 D-optimal 为正收益。收益幅度总体不大，说明高维下 D-optimal 的主要作用是稳健改善，而不是压倒性改善。",
+        f"最后一轮 {n_matched} 个匹配组合上，CPU 与 GPU 的 MSE gain 平均绝对差为 `{avg_abs_gain_diff:.2f}` 个百分点；相关系数为 `{gain_corr:.3f}`。这个相关值应结合匹配组合数量一起解读；更重要的是观察 CPU/GPU 的收益符号和排序是否一致。收益幅度总体不大时，说明高维下 D-optimal 的主要作用更接近稳健改善，而不是压倒性改善。",
         "",
         "## 最后一轮结果",
         "",
@@ -156,9 +162,9 @@ def write_report(df, summary, diff):
         "",
         "## 迭代现象",
         "",
-        "p=20 时 FullPR 只有 270 个特征，初始 750 个点已经超过特征数，所以 D-optimal 相对随机的提升比较温和。p=50 时 FullPR 有 1425 个特征，初始 750 个点低于特征数，前几轮会出现欠定和不稳定；当选点数超过特征数后，误差明显下降，最后一轮 CPU/GPU 都转为正收益。",
+        f"不同维度下需要把初始样本数、最终选点数和 FullPR 特征规模一起看。当前特征规模为：{feature_note}。当初始设计集已经超过特征数时，D-optimal 相对随机的提升通常较温和；当初始设计集低于特征数时，前几轮可能欠定或波动，随后要看升级后的设计集继续进入下一轮 D-optimal 后是否稳定。",
         "",
-        f"最后一轮共有 {final_positive}/{total} 个 CPU/GPU 组合中 D-optimal 优于随机中位数。这个结果支持“升级后的数据集可以继续用于下一轮 D-optimal 优化”的流程，但也说明高维时需要足够迭代预算，尤其是 p=50 时至少要让选点数接近或超过 FullPR 特征数。",
+        f"最后一轮共有 {final_positive}/{total} 个 CPU/GPU 组合中 D-optimal 优于随机中位数。这个结果支持“升级后的数据集可以继续用于下一轮 D-optimal 优化”的流程，但也说明高维时需要足够迭代预算，尤其要让选点数尽量接近或超过对应维度下的 FullPR 特征数。",
         "",
         "## 输出文件",
         "",

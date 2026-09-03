@@ -1,0 +1,26 @@
+﻿group,relation,spearman_rho,p_value,n
+ALL,act-change(sum) -> NN-FullPR closeness(in),0.17118120420515012,6.68324524711283e-21,2960
+ALL,act-change(sum) -> closeness(extrap),0.5584962553455196,1.9446862061067316e-242,2960
+ALL,NN-FullPR closeness -> perf gap,0.8389008782467612,0.0,2960
+ALL,NN-LayerTaylorPR closeness -> perf gap,0.3760247942566804,4.688397424374207e-100,2960
+ALL,LayerTaylorPR vs FullPR closeness,0.5590468130337568,5.17382687626497e-243,2960
+paper_poly3,act-change(sum) -> NN-FullPR closeness(in),-0.298837324993747,7.380520738701037e-20,892
+paper_poly3,act-change(sum) -> closeness(extrap),0.2762866329107178,4.3067692418660625e-17,892
+paper_poly3,NN-FullPR closeness -> perf gap,0.8333855023654612,2.071055367250826e-231,892
+paper_poly3,NN-LayerTaylorPR closeness -> perf gap,-0.01958052620623924,0.5591966447330834,892
+paper_poly3,LayerTaylorPR vs FullPR closeness,-0.10710123820081335,0.001357878736468857,892
+paper_poly4,act-change(sum) -> NN-FullPR closeness(in),-0.4896041821729291,1.0232165401671147e-54,888
+paper_poly4,act-change(sum) -> closeness(extrap),0.28633019726121167,3.223849763192929e-18,888
+paper_poly4,NN-FullPR closeness -> perf gap,0.8695074504668908,1.1702852886334635e-273,888
+paper_poly4,NN-LayerTaylorPR closeness -> perf gap,-0.21718183747108014,6.111526833453532e-11,888
+paper_poly4,LayerTaylorPR vs FullPR closeness,-0.24620874210318935,9.965063018854134e-14,888
+smooth_nonlinear,act-change(sum) -> NN-FullPR closeness(in),-0.5840379579905757,3.4938659379219445e-27,282
+smooth_nonlinear,act-change(sum) -> closeness(extrap),0.17573836919437447,0.0030652244845834208,282
+smooth_nonlinear,NN-FullPR closeness -> perf gap,0.8259323343092765,1.171396811977919e-71,282
+smooth_nonlinear,NN-LayerTaylorPR closeness -> perf gap,-0.3620945012036119,3.667611155109937e-10,282
+smooth_nonlinear,LayerTaylorPR vs FullPR closeness,-0.5410296507152926,7.664686226874109e-23,282
+smooth_nonlinear_rand,act-change(sum) -> NN-FullPR closeness(in),-0.2568418769475509,5.3891518765475345e-15,898
+smooth_nonlinear_rand,act-change(sum) -> closeness(extrap),0.5786616264531771,2.1403003392382247e-81,898
+smooth_nonlinear_rand,NN-FullPR closeness -> perf gap,0.43982513653450866,8.956538500988664e-44,898
+smooth_nonlinear_rand,NN-LayerTaylorPR closeness -> perf gap,-0.3415139407860026,5.75682125321017e-26,898
+smooth_nonlinear_rand,LayerTaylorPR vs FullPR closeness,-0.3558494414826821,3.374514352000097e-28,898

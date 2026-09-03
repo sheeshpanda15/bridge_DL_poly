@@ -8,22 +8,30 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
+from report_export import export_docx_to_pdf
+
 
 ROOT = Path(__file__).resolve().parent
+DATA_DIR = ROOT / "data" / "measure_weighted"
+FIG_DIR = ROOT / "figures" / "measure_weighted"
+REPORT_EN_DIR = ROOT / "reports" / "en"
+REPORT_ZH_DIR = ROOT / "reports" / "zh"
 
-SUMMARY = ROOT / "measure_weighted_grand_mean_strategy_summary.csv"
-CASE_SUMMARY = ROOT / "measure_weighted_grand_mean_case_summary.csv"
-PAIRWISE = ROOT / "measure_weighted_grand_mean_pairwise.csv"
-DISTANCES = ROOT / "measure_weighted_grand_mean_distances_combined.csv"
+SUMMARY = DATA_DIR / "measure_weighted_grand_mean_strategy_summary.csv"
+CASE_SUMMARY = DATA_DIR / "measure_weighted_grand_mean_case_summary.csv"
+PAIRWISE = DATA_DIR / "measure_weighted_grand_mean_pairwise.csv"
+DISTANCES = DATA_DIR / "measure_weighted_grand_mean_distances_combined.csv"
 
-FIG_FLOW = ROOT / "measure_weighted_sampling_flowchart_cn.png"
-FIG_GAIN = ROOT / "measure_weighted_grand_gain_by_p.png"
-FIG_LEARNING = ROOT / "measure_weighted_grand_learning_gain.png"
-FIG_CASE = ROOT / "measure_weighted_grand_case_gain_heatmap.png"
-FIG_WEIGHT = ROOT / "measure_weighted_grand_weight_heatmap.png"
+FIG_FLOW_CN = FIG_DIR / "measure_weighted_sampling_flowchart_cn.png"
+FIG_FLOW_EN = FIG_DIR / "measure_weighted_sampling_flowchart_en.png"
+FIG_GAIN = FIG_DIR / "measure_weighted_grand_gain_by_p.png"
+FIG_LEARNING = FIG_DIR / "measure_weighted_grand_learning_gain.png"
+FIG_CASE = FIG_DIR / "measure_weighted_grand_case_gain_heatmap.png"
+FIG_WEIGHT = FIG_DIR / "measure_weighted_grand_weight_heatmap.png"
 
 OUT_CN = ROOT / "大报告_中文_完整版_测度加权大实验更新版.docx"
-OUT_EN = ROOT / "big_report_en_complete_measure_weighted_grand_update.docx"
+OUT_EN = REPORT_EN_DIR / "01_Main_Report_Measure_Weighted_Grand_Update.docx"
+OUT_CN = REPORT_ZH_DIR / "大报告_中文_完整版_测度加权大实验更新版.docx"
 
 BLUE = RGBColor(0x2E, 0x74, 0xB5)
 DARK_BLUE = RGBColor(0x1F, 0x4D, 0x78)
@@ -387,7 +395,7 @@ def build_cn(data):
         doc,
         "实际应用中无法预先知道 NN 与 FullPR/TYPR 是否接近。因此实验先在训练集上做均匀 pilot 抽样，训练初始 NN，再计算该 NN 与 FullPR、TYPR 的响应曲面距离。距离经过归一化后转成下一批数据中的 D-optimal 比例。",
     )
-    add_picture(doc, FIG_FLOW, "图 1. 距离测度加权的批次采样流程", width=6.4)
+    add_picture(doc, FIG_FLOW_CN, "图 1. 距离测度加权的批次采样流程", width=6.4)
 
     doc.add_heading("2. 实验设计", level=1)
     add_numbered(
@@ -484,7 +492,7 @@ def build_en(data):
         doc,
         "In real applications the distance between a trained NN and a PR model is not known in advance. The workflow therefore starts with a uniform pilot sample, trains an initial NN, measures NN-FPR and NN-Taylor-PR distances, normalizes the distance, and uses the resulting weight to choose the D-optimal/random mix in the next batch.",
     )
-    add_picture(doc, FIG_FLOW, "Figure 1. Measure-weighted batch sampling workflow", width=6.4)
+    add_picture(doc, FIG_FLOW_EN, "Figure 1. Measure-weighted batch sampling workflow", width=6.4)
 
     doc.add_heading("2. Experimental Design", level=1)
     add_numbered(
@@ -557,11 +565,17 @@ def build_en(data):
 
 
 def main():
+    REPORT_EN_DIR.mkdir(parents=True, exist_ok=True)
+    REPORT_ZH_DIR.mkdir(parents=True, exist_ok=True)
     data = load_data()
     build_cn(data)
     build_en(data)
+    out_cn_pdf = export_docx_to_pdf(OUT_CN)
+    out_en_pdf = export_docx_to_pdf(OUT_EN)
     print(f"Wrote {OUT_CN}")
     print(f"Wrote {OUT_EN}")
+    print(f"Wrote {out_cn_pdf}")
+    print(f"Wrote {out_en_pdf}")
 
 
 if __name__ == "__main__":

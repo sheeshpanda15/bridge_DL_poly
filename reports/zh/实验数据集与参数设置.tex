@@ -1,0 +1,370 @@
+\documentclass[UTF8,a4paper,11pt]{ctexart}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{hyperref}
+
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
+\setlength{\emergencystretch}{3em}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\title{实验数据集与参数设置}
+\author{Bridge DL Poly Experiments}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{实验设置总览}
+
+本项目的实验分为四条主线：低维 NN--多项式几何等价性实验、pilot 距离驱动的 D-optimal 迁移实验、高维迭代 D-optimal 实验，以及最终的 measure-weighted 批量采样实验。所有实验的共同目标是检验 NN 与多项式回归模型之间的几何距离是否能够解释预测性能差距，并进一步作为 D-optimal 采样迁移的诊断量或策略变量。
+
+\begin{longtable}{L{0.22\textwidth}L{0.30\textwidth}L{0.38\textwidth}}
+\caption{实验主线及用途}
+\label{tab:experiment-lines} \\
+\toprule
+\textbf{Experiment} & \textbf{Main Scripts} & \textbf{Purpose} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Experiment} & \textbf{Main Scripts} & \textbf{Purpose} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+
+Low-dimensional geometry experiment
+& \texttt{measure\_morala.py}; \texttt{analyze\_results.py}
+& Tests whether geometric closeness between NN and polynomial regression predicts predictive-performance closeness. \\
+
+Pilot D-optimal transfer
+& \texttt{d\_optimal\_transfer}; \texttt{pilot\_dopt\_transfer}
+& Tests whether a small pilot NN--FullPR distance can diagnose when FullPR-based D-optimal sampling transfers to NN distillation. \\
+
+High-dimensional iterative D-optimal
+& \texttt{iterative\_highdim\_dopt}; \texttt{paper\_highdim\_iter}
+& Tests whether repeatedly upgrading the design set by D-optimal leverage improves a FullPR surrogate of an NN oracle. \\
+
+Measure-weighted batch sampling
+& \texttt{measure\_weighted\_sampling}; \texttt{combine\_measure\_weighted\_grand}
+& Uses NN--PR/TYPR distances as a transfer gate to mix D-optimal and random sampling. \\
+
+\end{longtable}
+
+\section{Datasets}
+
+\subsection{Low-dimensional datasets}
+
+The low-dimensional geometry experiments use $n=200$ samples and $p=3$ input variables. Inputs are generated before scaling, then both $X$ and $y$ are min--max scaled to $[-1,1]$ after a fixed 75/25 train/test split. The data seed is fixed at 0 in the final grid, while NN initialization seeds vary.
+
+\begin{longtable}{L{0.22\textwidth}L{0.34\textwidth}L{0.34\textwidth}}
+\caption{Low-dimensional datasets used in the geometry and pilot-transfer experiments}
+\label{tab:lowdim-datasets} \\
+\toprule
+\textbf{Dataset} & \textbf{Generation / Structure} & \textbf{Role in the Experiments} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Dataset} & \textbf{Generation / Structure} & \textbf{Role in the Experiments} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+
+\texttt{paper\_poly3}
+& Complete degree-3 polynomial with interaction terms and Gaussian noise.
+& Well-specified control case when the NN depth matches the polynomial order. \\
+
+\texttt{paper\_poly4}
+& Complete degree-4 polynomial with interaction terms and Gaussian noise.
+& Strictly under-specified case for the tested FullPR depth range. \\
+
+\texttt{smooth\_nonlinear}
+& Fixed smooth non-polynomial target:
+$y=\sin(x_1)+x_2^2+x_2x_3+x_3+\epsilon$.
+& Smooth non-polynomial benchmark with stable structure. \\
+
+\texttt{smooth\_nonlinear\_rand}
+& Random-frequency non-polynomial target:
+$y=a\sin(\omega x_1+\phi)+x_2^2+x_2x_3+x_3+\epsilon$.
+& Harder non-polynomial benchmark where the sinusoidal component changes by seed. \\
+
+\end{longtable}
+
+\subsection{High-dimensional datasets}
+
+The high-dimensional experiments use $n=10000$ original samples, a 75/25 train/test split, and $p\in\{20,50\}$. Inputs are generated from a standard normal distribution, split into training and test sets, and scaled to $[-1,1]$. The response is also scaled to $[-1,1]$. The noise level is $\sigma=0.03$.
+
+\begin{longtable}{L{0.24\textwidth}L{0.36\textwidth}L{0.30\textwidth}}
+\caption{High-dimensional datasets used in the D-optimal and measure-weighted experiments}
+\label{tab:highdim-datasets} \\
+\toprule
+\textbf{Dataset} & \textbf{Generation / Structure} & \textbf{Role in the Experiments} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Dataset} & \textbf{Generation / Structure} & \textbf{Role in the Experiments} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+
+\texttt{highdim\_poly2}
+& Random quadratic polynomial generated from degree-2 polynomial features.
+& High-dimensional polynomial reference case. \\
+
+\texttt{highdim\_smooth}
+& Quadratic backbone plus moderate smooth nonlinear terms, including sine, cosine, and tanh components.
+& Mild nonlinear high-dimensional case. \\
+
+\texttt{highdim\_strong}
+& Quadratic backbone plus stronger nonlinear sine, cosine, and tanh terms.
+& Boundary case where the NN oracle is less fully represented by degree-2 FullPR. \\
+
+\texttt{highdim\_local}
+& Low-amplitude global terms plus localized Gaussian bump and ridge-like structure.
+& Tests whether sampling can detect local interior structure. \\
+
+\texttt{highdim\_highfreq}
+& Low-amplitude global terms plus high-frequency sine/cosine components.
+& Stress case for negative transfer and over-aggressive D-optimal sampling. \\
+
+\end{longtable}
+
+\section{Parameter Settings}
+
+\subsection{Low-dimensional geometry experiment}
+
+\begin{longtable}{L{0.30\textwidth}L{0.58\textwidth}}
+\caption{Parameter settings for the low-dimensional geometry experiment}
+\label{tab:lowdim-parameters} \\
+\toprule
+\textbf{Parameter} & \textbf{Setting} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Parameter} & \textbf{Setting} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+
+Datasets
+& \texttt{paper\_poly3}, \texttt{paper\_poly4}, \texttt{smooth\_nonlinear}, \texttt{smooth\_nonlinear\_rand}. \\
+
+Sample size and dimension
+& $n=200$, $p=3$. \\
+
+Train/test split
+& 75/25 split with fixed \texttt{random\_state=42}. \\
+
+Scaling
+& Min--max scaling of both $X$ and $y$ to $[-1,1]$. \\
+
+Activation functions
+& \texttt{softplus}, \texttt{tanh}, \texttt{sigmoid}; \texttt{smooth\_nonlinear} is run only with \texttt{softplus} in the final grid. \\
+
+Hidden-layer structures
+& $(4)$, $(8,4)$, $(16,8,4)$. \\
+
+Taylor truncation order
+& $q=3$. \\
+
+FullPR feature setting
+& Both \texttt{include\_special=True} and \texttt{include\_special=False}; special terms include sinusoidal/exponential features. \\
+
+FullPR maximum order
+& Equal to the number of NN hidden layers in each configuration. \\
+
+Optimizer and training epochs
+& RPROP optimizer; 1500 epochs in the default experiment setting. \\
+
+Repeated runs
+& 50 NN initialization seeds per configuration; fixed data seed 0. The final low-dimensional result contains 3000 runs. \\
+
+Main outputs
+& \texttt{results\_raw.csv}, cleaned correlations, LTPR failure rates, NN-baseline comparisons, geometry/MSE figures. \\
+
+\end{longtable}
+
+\subsection{Pilot D-optimal transfer experiment}
+
+\begin{longtable}{L{0.30\textwidth}L{0.58\textwidth}}
+\caption{Parameter settings for the pilot D-optimal transfer experiment}
+\label{tab:pilot-dopt-parameters} \\
+\toprule
+\textbf{Parameter} & \textbf{Setting} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Parameter} & \textbf{Setting} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+
+Datasets
+& \texttt{paper\_poly3}, \texttt{paper\_poly4}, \texttt{smooth\_nonlinear}, \texttt{smooth\_nonlinear\_rand}. \\
+
+Activations
+& \texttt{tanh} for \texttt{paper\_poly3}, \texttt{paper\_poly4}, and \texttt{smooth\_nonlinear\_rand}; \texttt{softplus} for \texttt{smooth\_nonlinear}. \\
+
+Full data size
+& $n_{\mathrm{full}}=5000$. \\
+
+NN architecture
+& Hidden layers $(16,8,4)$. \\
+
+Training epochs
+& 500 epochs in the pilot-transfer runner. \\
+
+Pilot fractions
+& 0.005, 0.01, and 0.1 in the final CPU/GPU summary. \\
+
+Candidate and evaluation points
+& 3000 candidate points and 1000 evaluation points. \\
+
+Budgets
+& 26 and 52 queried NN points in the final combined result. \\
+
+Random baseline
+& Same-budget random designs, repeated 30 times. \\
+
+Devices
+& CPU and CUDA. \\
+
+Main outputs
+& Pilot distance, D-optimal MSE gain versus random median, CPU/GPU comparison tables and figures. \\
+
+\end{longtable}
+
+\subsection{High-dimensional iterative D-optimal experiment}
+
+\begin{longtable}{L{0.30\textwidth}L{0.58\textwidth}}
+\caption{Parameter settings for the high-dimensional iterative D-optimal experiment}
+\label{tab:highdim-iter-parameters} \\
+\toprule
+\textbf{Parameter} & \textbf{Setting} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Parameter} & \textbf{Setting} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+
+Datasets
+& \texttt{highdim\_poly2}, \texttt{highdim\_smooth}, \texttt{highdim\_strong}. \\
+
+Original sample size
+& $n=10000$; 7500 training-pool points and 2500 evaluation points. \\
+
+Input dimensions
+& $p=20$ and $p=50$. \\
+
+Data seeds and NN initialization seeds
+& Data seeds 0, 1, 2; NN initialization seeds 0, 1. \\
+
+Initial uniform fractions
+& 0.05 and 0.1, corresponding to 375 and 750 initial design points. \\
+
+Iterations and batch size
+& 5 D-optimal upgrade iterations; each iteration adds 500 points. Final selected sizes are 2875 and 3250. \\
+
+NN oracle
+& Hidden layers $(128,64,32)$, \texttt{tanh} activation, 1000 epochs. \\
+
+FullPR surrogate
+& Degree-2 polynomial features with special terms; ridge parameter $\alpha=10^{-5}$. \\
+
+D-optimal approximation
+& Batch leverage approximation with ridge $10^{-2}$ and chunk size 512. \\
+
+Random baseline
+& 10 same-budget random upgrades at each iteration point. \\
+
+Devices
+& CPU and CUDA. \\
+
+Shape subsampling
+& Up to 1000 points are used for shape-distance computation. \\
+
+Main outputs
+& \texttt{paper\_highdim\_iter\_dopt\_raw.csv}, aggregate statistics, final summary, MSE/gain curves, and final-gain figures. \\
+
+\end{longtable}
+
+\subsection{Measure-weighted batch sampling experiment}
+
+\begin{longtable}{L{0.30\textwidth}L{0.58\textwidth}}
+\caption{Parameter settings for the measure-weighted batch sampling experiment}
+\label{tab:measure-weighted-parameters} \\
+\toprule
+\textbf{Parameter} & \textbf{Setting} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Parameter} & \textbf{Setting} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+
+Datasets
+& \texttt{highdim\_poly2}, \texttt{highdim\_smooth}, \texttt{highdim\_strong}, \texttt{highdim\_local}, \texttt{highdim\_highfreq}. \\
+
+Original sample size
+& $n=10000$; 7500 training points and 2500 test points. \\
+
+Input dimensions
+& $p=20$ and $p=50$. \\
+
+Data seeds and initial seeds
+& Data seeds 0, 1, 2, 3, 4; initial sampling seeds 0, 1. \\
+
+Initial pilot fraction
+& 0.05 of the training pool, i.e. 375 initial points. A 25\% split of the pilot subset is used as pilot validation. \\
+
+Batch rounds and batch size
+& 6 batch updates; each update adds 500 points. Selected sizes are 375, 875, 1375, 1875, 2375, 2875, and 3375. \\
+
+Pilot NN
+& Single-hidden-layer NN with hidden size 64, \texttt{tanh} activation, 350 epochs. \\
+
+Main NN/surrogate fitting
+& Same hidden size and activation; 350 epochs for NN training. \\
+
+FullPR and Taylor-PR settings
+& FullPR degree 2; Taylor order 3; ridge parameter $\alpha=10^{-4}$. \\
+
+Distance computation
+& Shape distance uses at most 256 sampled points. The combined transfer distance is $\mathrm{mean}(d_{\mathrm{FPR}},d_{\mathrm{TYPR}})$. \\
+
+Distance normalization
+& Distances are normalized using the 0.10 and 0.90 quantiles. \\
+
+D-optimal weight bounds
+& \texttt{dopt\_weight} is bounded between 0.30 and 0.95. \\
+
+Compared strategies
+& \texttt{Measure-weighted}, \texttt{Random}, \texttt{D-optimal}, and \texttt{Latin hypercube}. \\
+
+D-optimal approximation
+& Batch leverage approximation with ridge $10^{-6}$ and chunk size 2048. \\
+
+Device
+& CUDA in the grand benchmark commands. \\
+
+Main outputs
+& Combined raw/final/distance CSV files, strategy summaries, case summaries, pairwise comparisons, learning curves, gain plots, and weight heatmaps. \\
+
+\end{longtable}
+
+\section{Notes for Reporting}
+
+Across all experiments, positive gain means that the tested design or sampling strategy obtains a lower MSE than the corresponding random baseline under the same budget. The pilot-distance and measure-weighted experiments should therefore be interpreted as transfer-diagnosis experiments: the distance is not claimed to make D-optimal universally optimal, but to indicate when old PR/D-optimal structure is likely to transfer to a new NN model.
+
+\end{document}

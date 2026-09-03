@@ -1,0 +1,25 @@
+﻿group,relation,x,y,spearman_rho,p_value,n
+ALL,act-change(sum) -> NN-PR closeness(in),act_io_sum,shape_NN_FPR_in,-0.32804762272630017,5.158284285325194e-15,540
+ALL,act-change(sum) -> closeness(extrap),act_io_sum,shape_NN_FPR_ext,0.4912018945510148,3.8426736010226095e-34,540
+ALL,act-change(sum) -> perf gap,act_io_sum,abs_rmse_gap,-0.2300316932331524,6.45470269707406e-08,540
+ALL,NN-FullPR closeness -> perf gap,shape_NN_FPR_in,abs_rmse_gap,0.8135392172888872,9.064564030252598e-129,540
+ALL,NN-LayerTaylorPR closeness -> perf gap,shape_NN_LTPR,abs_rmse_gap,,,0
+ALL,NN-LayerTaylorPR vs NN-FullPR,shape_NN_LTPR,shape_NN_FPR_in,,,0
+highdim_poly4,act-change(sum) -> NN-PR closeness(in),act_io_sum,shape_NN_FPR_in,-0.57677289976166,2.3817408406255136e-17,180
+highdim_poly4,act-change(sum) -> closeness(extrap),act_io_sum,shape_NN_FPR_ext,0.6323492045772543,1.720827811914152e-21,180
+highdim_poly4,act-change(sum) -> perf gap,act_io_sum,abs_rmse_gap,-0.5132700573960929,1.739683521234726e-13,180
+highdim_poly4,NN-FullPR closeness -> perf gap,shape_NN_FPR_in,abs_rmse_gap,0.8434643044538412,6.473852546462699e-50,180
+highdim_poly4,NN-LayerTaylorPR closeness -> perf gap,shape_NN_LTPR,abs_rmse_gap,,,0
+highdim_poly4,NN-LayerTaylorPR vs NN-FullPR,shape_NN_LTPR,shape_NN_FPR_in,,,0
+highdim_poly3,act-change(sum) -> NN-PR closeness(in),act_io_sum,shape_NN_FPR_in,-0.291396970243138,7.225361608487252e-05,180
+highdim_poly3,act-change(sum) -> closeness(extrap),act_io_sum,shape_NN_FPR_ext,0.8102435896227269,3.667162897189913e-43,180
+highdim_poly3,act-change(sum) -> perf gap,act_io_sum,abs_rmse_gap,-0.05393831834368915,0.4720542489112929,180
+highdim_poly3,NN-FullPR closeness -> perf gap,shape_NN_FPR_in,abs_rmse_gap,0.83894564647057,6.585033658033651e-49,180
+highdim_poly3,NN-LayerTaylorPR closeness -> perf gap,shape_NN_LTPR,abs_rmse_gap,,,0
+highdim_poly3,NN-LayerTaylorPR vs NN-FullPR,shape_NN_LTPR,shape_NN_FPR_in,,,0
+highdim_nonlinear,act-change(sum) -> NN-PR closeness(in),act_io_sum,shape_NN_FPR_in,-0.17577487993735416,0.018262883701945433,180
+highdim_nonlinear,act-change(sum) -> closeness(extrap),act_io_sum,shape_NN_FPR_ext,0.4387910594512017,7.213642628916647e-10,180
+highdim_nonlinear,act-change(sum) -> perf gap,act_io_sum,abs_rmse_gap,-0.11598425816891865,0.12102426553114402,180
+highdim_nonlinear,NN-FullPR closeness -> perf gap,shape_NN_FPR_in,abs_rmse_gap,0.7734415671265575,4.383590814948749e-37,180
+highdim_nonlinear,NN-LayerTaylorPR closeness -> perf gap,shape_NN_LTPR,abs_rmse_gap,,,0
+highdim_nonlinear,NN-LayerTaylorPR vs NN-FullPR,shape_NN_LTPR,shape_NN_FPR_in,,,0

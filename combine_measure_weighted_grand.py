@@ -9,6 +9,9 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parent
+DATA_DIR = ROOT / "data" / "measure_weighted"
+FIG_DIR = ROOT / "figures" / "measure_weighted"
+NOTES_DIR = ROOT / "reports" / "notes"
 PREFIXES = {
     20: "measure_weighted_sampling_grand_mean_p20",
     50: "measure_weighted_sampling_grand_mean_p50",
@@ -48,9 +51,19 @@ CASE_ORDER = [
 
 
 def load_kind(kind, prefixes):
+    root_paths = [ROOT / f"{prefix}_{kind}.csv" for prefix in prefixes.values()]
+    if not any(path.exists() for path in root_paths):
+        combined_path = DATA_DIR / f"measure_weighted_grand_mean_{kind}_combined.csv"
+        if combined_path.exists():
+            return pd.read_csv(combined_path)
+
     frames = []
     for p, prefix in prefixes.items():
         path = ROOT / f"{prefix}_{kind}.csv"
+        if not path.exists():
+            data_path = DATA_DIR / f"{prefix}_{kind}.csv"
+            if data_path.exists():
+                path = data_path
         df = pd.read_csv(path)
         df["p_dim"] = p
         df["source_prefix"] = prefix
@@ -164,7 +177,7 @@ def plot_gain_by_p(summary):
         ax.set_ylabel("Mean final gain vs random (%)")
         ax.grid(True, axis="y", alpha=0.25)
     fig.tight_layout()
-    out = ROOT / "measure_weighted_grand_gain_by_p.png"
+    out = FIG_DIR / "measure_weighted_grand_gain_by_p.png"
     fig.savefig(out, dpi=200)
     plt.close(fig)
     return out
@@ -220,7 +233,7 @@ def plot_learning_gain(raw):
         ax.grid(True, alpha=0.25)
     axes[0].legend(frameon=False, fontsize=9)
     fig.tight_layout()
-    out = ROOT / "measure_weighted_grand_learning_gain.png"
+    out = FIG_DIR / "measure_weighted_grand_learning_gain.png"
     fig.savefig(out, dpi=200)
     plt.close(fig)
     return out
@@ -248,7 +261,7 @@ def plot_case_gain_heatmap(case_summary):
     ax.set_title("Measure-weighted final gain vs random")
     fig.colorbar(im, ax=ax, label="Gain (%)")
     fig.tight_layout()
-    out = ROOT / "measure_weighted_grand_case_gain_heatmap.png"
+    out = FIG_DIR / "measure_weighted_grand_case_gain_heatmap.png"
     fig.savefig(out, dpi=200)
     plt.close(fig)
     return out
@@ -276,7 +289,7 @@ def plot_weight_heatmap(distances):
     ax.set_title("Mean D-optimal fraction learned from NN-PR distance")
     fig.colorbar(im, ax=ax, label="D-optimal fraction")
     fig.tight_layout()
-    out = ROOT / "measure_weighted_grand_weight_heatmap.png"
+    out = FIG_DIR / "measure_weighted_grand_weight_heatmap.png"
     fig.savefig(out, dpi=200)
     plt.close(fig)
     return out
@@ -309,7 +322,7 @@ def arrow(ax, start, end):
     )
 
 
-def plot_flowchart():
+def plot_flowchart(lang="cn"):
     plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Arial Unicode MS", "DejaVu Sans"]
     plt.rcParams["axes.unicode_minus"] = False
     fig, ax = plt.subplots(figsize=(12.5, 7.2))
@@ -317,19 +330,40 @@ def plot_flowchart():
     ax.set_ylim(0, 1)
     ax.axis("off")
 
-    boxes = {
-        "split": ((0.05, 0.76), (0.18, 0.12), "原始数据集\nTrain/Test 拆分"),
-        "pilot": ((0.30, 0.76), (0.18, 0.12), "训练集均匀抽样\nPilot subset"),
-        "init": ((0.55, 0.76), (0.18, 0.12), "训练初始 NN\n单隐层 tanh"),
-        "dist": ((0.78, 0.76), (0.18, 0.12), "计算距离\nNN-FPR / NN-TYPR"),
-        "norm": ((0.78, 0.53), (0.18, 0.13), "归一化到 [0,1]\n得到 transfer weight"),
-        "mix": ((0.55, 0.53), (0.18, 0.13), "固定 batch size\nD-optimal + 随机混合"),
-        "train": ((0.30, 0.53), (0.18, 0.13), "加入新批次\n重新训练 NN"),
-        "eval": ((0.05, 0.53), (0.18, 0.13), "测试集评估\nMSE / 学习曲线"),
-        "loop": ((0.30, 0.29), (0.43, 0.12), "重复多个 batch round\n更新训练集并继续采样"),
-        "controls": ((0.05, 0.16), (0.43, 0.10), "对照组：全随机 / 全 D-optimal / Latin hypercube"),
-        "claim": ((0.55, 0.16), (0.41, 0.10), "论文解释：距离小则迁移旧技术\n距离大则保留随机探索，降低负迁移"),
-    }
+    if lang == "en":
+        title = "Measure-weighted batch sampling workflow"
+        note = "Larger weight means more D-optimal points in the next batch; smaller weight preserves more random exploration."
+        suffix = "en"
+        boxes = {
+            "split": ((0.05, 0.76), (0.18, 0.12), "Original dataset\nTrain/test split"),
+            "pilot": ((0.30, 0.76), (0.18, 0.12), "Uniform sample from train\nPilot subset"),
+            "init": ((0.55, 0.76), (0.18, 0.12), "Train initial NN\nSingle hidden-layer tanh"),
+            "dist": ((0.78, 0.76), (0.18, 0.12), "Measure distance\nNN-FPR / NN-TYPR"),
+            "norm": ((0.78, 0.53), (0.18, 0.13), "Normalize to [0, 1]\nTransfer weight"),
+            "mix": ((0.55, 0.53), (0.18, 0.13), "Fixed batch size\nD-optimal + random mix"),
+            "train": ((0.30, 0.53), (0.18, 0.13), "Add new batch\nRetrain NN"),
+            "eval": ((0.05, 0.53), (0.18, 0.13), "Evaluate on test set\nMSE / learning curve"),
+            "loop": ((0.30, 0.29), (0.43, 0.12), "Repeat batch rounds\nUpdate training set and continue sampling"),
+            "controls": ((0.05, 0.16), (0.43, 0.10), "Controls: all-random / all-D-optimal / Latin hypercube"),
+            "claim": ((0.55, 0.16), (0.41, 0.10), "Paper interpretation: transfer legacy methods when distance is small\npreserve random exploration when distance is large"),
+        }
+    else:
+        title = "距离测度加权的批次采样流程"
+        note = "weight 越大，下一批中 D-optimal 点越多；weight 越小，随机探索比例越高。"
+        suffix = "cn"
+        boxes = {
+            "split": ((0.05, 0.76), (0.18, 0.12), "原始数据集\nTrain/Test 拆分"),
+            "pilot": ((0.30, 0.76), (0.18, 0.12), "训练集均匀抽样\nPilot subset"),
+            "init": ((0.55, 0.76), (0.18, 0.12), "训练初始 NN\n单隐层 tanh"),
+            "dist": ((0.78, 0.76), (0.18, 0.12), "计算距离\nNN-FPR / NN-TYPR"),
+            "norm": ((0.78, 0.53), (0.18, 0.13), "归一化到 [0,1]\n得到 transfer weight"),
+            "mix": ((0.55, 0.53), (0.18, 0.13), "固定 batch size\nD-optimal + 随机混合"),
+            "train": ((0.30, 0.53), (0.18, 0.13), "加入新批次\n重新训练 NN"),
+            "eval": ((0.05, 0.53), (0.18, 0.13), "测试集评估\nMSE / 学习曲线"),
+            "loop": ((0.30, 0.29), (0.43, 0.12), "重复多个 batch round\n更新训练集并继续采样"),
+            "controls": ((0.05, 0.16), (0.43, 0.10), "对照组：全随机 / 全 D-optimal / Latin hypercube"),
+            "claim": ((0.55, 0.16), (0.41, 0.10), "论文解释：距离小则迁移旧技术\n距离大则保留随机探索，降低负迁移"),
+        }
     for key, (xy, wh, text) in boxes.items():
         fill = "#E8EEF5" if key in {"dist", "norm", "mix"} else "#F7F9FC"
         draw_box(ax, xy, wh, text, fc=fill)
@@ -349,7 +383,7 @@ def plot_flowchart():
     ax.text(
         0.5,
         0.95,
-        "距离测度加权的批次采样流程",
+        title,
         ha="center",
         va="center",
         fontsize=18,
@@ -359,14 +393,14 @@ def plot_flowchart():
     ax.text(
         0.5,
         0.04,
-        "weight 越大，下一批中 D-optimal 点越多；weight 越小，随机探索比例越高。",
+        note,
         ha="center",
         va="center",
         fontsize=11,
         color="#555555",
     )
     fig.tight_layout()
-    out = ROOT / "measure_weighted_sampling_flowchart_cn.png"
+    out = FIG_DIR / f"measure_weighted_sampling_flowchart_{suffix}.png"
     fig.savefig(out, dpi=220)
     plt.close(fig)
     return out
@@ -517,33 +551,38 @@ def write_report(summary, case_summary, pairwise_df, distances, plot_paths):
             "",
         ]
     )
-    out = ROOT / "measure_weighted_grand_mean_report.md"
+    out = NOTES_DIR / "measure_weighted_grand_mean_report.md"
     out.write_text("\n".join(lines), encoding="utf-8")
     return out
 
 
 def main():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    FIG_DIR.mkdir(parents=True, exist_ok=True)
+    NOTES_DIR.mkdir(parents=True, exist_ok=True)
+
     raw = load_kind("raw", PREFIXES)
     final = load_kind("final", PREFIXES)
     distances = load_kind("distances", PREFIXES)
 
-    raw.to_csv(ROOT / "measure_weighted_grand_mean_raw_combined.csv", index=False)
-    final.to_csv(ROOT / "measure_weighted_grand_mean_final_combined.csv", index=False)
-    distances.to_csv(ROOT / "measure_weighted_grand_mean_distances_combined.csv", index=False)
+    raw.to_csv(DATA_DIR / "measure_weighted_grand_mean_raw_combined.csv", index=False)
+    final.to_csv(DATA_DIR / "measure_weighted_grand_mean_final_combined.csv", index=False)
+    distances.to_csv(DATA_DIR / "measure_weighted_grand_mean_distances_combined.csv", index=False)
 
     summary = summarize_final(final)
     case_summary = summarize_cases(final)
     pairwise_df = pairwise(final)
-    summary.to_csv(ROOT / "measure_weighted_grand_mean_strategy_summary.csv", index=False)
-    case_summary.to_csv(ROOT / "measure_weighted_grand_mean_case_summary.csv", index=False)
-    pairwise_df.to_csv(ROOT / "measure_weighted_grand_mean_pairwise.csv", index=False)
+    summary.to_csv(DATA_DIR / "measure_weighted_grand_mean_strategy_summary.csv", index=False)
+    case_summary.to_csv(DATA_DIR / "measure_weighted_grand_mean_case_summary.csv", index=False)
+    pairwise_df.to_csv(DATA_DIR / "measure_weighted_grand_mean_pairwise.csv", index=False)
 
     paths = [
         plot_gain_by_p(summary),
         plot_learning_gain(raw),
         plot_case_gain_heatmap(case_summary),
         plot_weight_heatmap(distances),
-        plot_flowchart(),
+        plot_flowchart("cn"),
+        plot_flowchart("en"),
     ]
     report = write_report(summary, case_summary, pairwise_df, distances, paths)
     print(f"Wrote {report}")

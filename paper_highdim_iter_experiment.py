@@ -23,6 +23,7 @@ from sklearn.metrics import mean_squared_error
 
 from iterative_highdim_dopt_experiment import (
     CASE_LABELS,
+    DEFAULT_P_VALUES,
     batch_dopt_select,
     build_fullpr_features,
     design_matrix_for_dopt,
@@ -343,6 +344,16 @@ def write_report(df, agg, args, counts, out_prefix):
         if x and x.lower() != "nan"
     )
     cuda_desc = ", ".join(cuda_names) if cuda_names else "not used"
+    feature_rows = (
+        final[["p", "n_fullpr_features", "n_design_params", "initial_n"]]
+        .drop_duplicates()
+        .sort_values("p")
+    )
+    feature_note = "；".join(
+        f"p={int(row.p)}: FullPR={int(row.n_fullpr_features)}, "
+        f"D-opt params={int(row.n_design_params)}, init n={int(row.initial_n)}"
+        for row in feature_rows.itertuples(index=False)
+    )
 
     lines = [
         "# 论文级高维迭代 D-optimal 实验报告",
@@ -399,8 +410,8 @@ def write_report(df, agg, args, counts, out_prefix):
         "",
         "## 论文表述建议",
         "",
-        "1. 对 p=20，初始设计集通常已经超过二阶 FullPR 的特征数，因此 D-optimal 的优势主要表现为小幅但稳定的改进。",
-        "2. 对 p=50，初始设计集低于 FullPR 特征数，早期迭代可能出现欠定不稳定；随着升级后的数据集不断被用于下一轮 D-optimal，误差会在选点数超过特征数后明显收敛。",
+        f"1. 维度扩展到 {', '.join(str(x) for x in args.p_values)} 后，应按特征数和初始样本数一起解释结果。当前规模为：{feature_note}。",
+        "2. 当初始设计集已经超过二阶 FullPR 特征数时，D-optimal 的收益通常表现为小幅但稳定的改进；当初始设计集低于特征数时，早期迭代更容易欠定和波动，需要观察升级后的设计集继续进入下一轮 D-optimal 后是否收敛。",
         "3. 强非线性场景用于说明方法边界：当 NN oracle 的局部行为不能由二阶 FullPR 充分表达时，D-optimal 仍可能改善采样覆盖，但不应被解释为充分逼近 NN 的保证。",
         "4. 因此论文中的核心结论应写成：pilot 距离和迭代式 D-optimal 升级提供了一个可观测、可复现的数据选择诊断流程；它在高维中可以稳定优于随机升级，但收益幅度取决于 FullPR 特征空间、初始样本比例和迭代预算。",
         "",
@@ -479,7 +490,7 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=10000)
-    parser.add_argument("--p-values", type=int, nargs="*", default=[10, 20, 50])
+    parser.add_argument("--p-values", type=int, nargs="*", default=DEFAULT_P_VALUES)
     parser.add_argument("--cases", nargs="*", default=CASE_ORDER,
                         choices=CASE_ORDER)
     parser.add_argument("--data-seeds", type=int, nargs="*", default=[0, 1, 2])

@@ -5,3 +5,4 @@ scipy
 scikit-learn
 torch
 python-docx
+reportlab

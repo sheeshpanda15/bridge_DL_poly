@@ -3,7 +3,7 @@ High-dimensional iterative D-optimal transfer experiment.
 
 This script is the paper-scale version of the pilot-D-optimal idea:
 
-1. Generate an original dataset with n=10000 and p in {10, 20, 50}.
+1. Generate an original dataset with n=10000 and p in {10, 20, 50, 100, 200}.
 2. Train a full NN oracle on the original training split.
 3. Start from a small uniform pilot/design set.
 4. Fit a FullPR surrogate to the NN oracle on the current design set.
@@ -11,7 +11,7 @@ This script is the paper-scale version of the pilot-D-optimal idea:
 6. Refit the surrogate and repeat.
 7. Compare each upgraded design against random additions with the same budget.
 
-For p=50, full cubic polynomial features are too large for an exact greedy
+For high p, full cubic polynomial features are too large for an exact greedy
 D-optimal inverse update. The high-dimensional experiment therefore uses a
 degree-2 FullPR feature space and a scalable batch leverage approximation to
 D-optimal selection. The approximation is conditional on the currently selected
@@ -49,6 +49,8 @@ CASE_LABELS = {
     "highdim_smooth": "Smooth",
     "highdim_strong": "Strong nonlinear",
 }
+
+DEFAULT_P_VALUES = [10, 20, 50, 100, 200]
 
 
 def get_device(name):
@@ -189,6 +191,11 @@ def batch_dopt_select(Z, selected_mask, batch_size, ridge, chunk_size):
     batch_size = min(batch_size, len(remaining))
     Z_selected = Z[selected_mask]
     d = Z.shape[1]
+
+    if d > len(Z_selected):
+        return batch_dopt_select_dual(
+            Z, Z_selected, remaining, batch_size, ridge, chunk_size)
+
     info = Z_selected.T @ Z_selected
     info.flat[::d + 1] += ridge
 
@@ -209,6 +216,47 @@ def batch_dopt_select(Z, selected_mask, batch_size, ridge, chunk_size):
             L, Z[idx].T, lower=True, check_finite=False, overwrite_b=False)
         scores[start:stop] = np.sum(solved * solved, axis=0)
 
+    top = np.argpartition(scores, -batch_size)[-batch_size:]
+    top = top[np.argsort(scores[top])[::-1]]
+    return remaining[top]
+
+
+def batch_dopt_select_dual(Z, Z_selected, remaining, batch_size, ridge, chunk_size):
+    """Compute leverage scores through the selected-sample Gram matrix.
+
+    This is equivalent to z^T (Z_s^T Z_s + ridge I)^-1 z by Woodbury, and is
+    much cheaper when p is high and the selected design has fewer rows than
+    design parameters.
+    """
+    s = len(Z_selected)
+    sample_gram = Z_selected @ Z_selected.T
+    sample_gram /= ridge
+    sample_gram.flat[::s + 1] += 1.0
+
+    jitter = 0.0
+    while True:
+        try:
+            L = np.linalg.cholesky(sample_gram)
+            break
+        except np.linalg.LinAlgError:
+            jitter = 1e-10 if jitter == 0.0 else jitter * 10.0
+            sample_gram.flat[::s + 1] += jitter
+
+    scores = np.empty(len(remaining), dtype=np.float64)
+    inv_ridge = 1.0 / ridge
+    inv_ridge_sq = inv_ridge * inv_ridge
+    for start in range(0, len(remaining), chunk_size):
+        stop = min(start + chunk_size, len(remaining))
+        idx = remaining[start:stop]
+        Z_chunk = Z[idx]
+        norm2 = np.einsum("ij,ij->i", Z_chunk, Z_chunk, optimize=True)
+        cross = Z_selected @ Z_chunk.T
+        solved = solve_triangular(
+            L, cross, lower=True, check_finite=False, overwrite_b=False)
+        scores[start:stop] = norm2 * inv_ridge - np.sum(
+            solved * solved, axis=0) * inv_ridge_sq
+
+    scores = np.maximum(scores, 0.0)
     top = np.argpartition(scores, -batch_size)[-batch_size:]
     top = top[np.argsort(scores[top])[::-1]]
     return remaining[top]
@@ -390,12 +438,24 @@ def write_report(df, out_prefix):
     final = df.sort_values("iteration").groupby(["case", "p", "device"]).tail(1)
     pos = int((final["mse_gain_vs_random_median_pct"] > 0).sum())
     total = len(final)
+    p_list = sorted(df["p"].unique())
+    p_desc = ", ".join(str(x) for x in p_list)
+    feature_rows = (
+        final[["p", "n_fullpr_features", "n_design_params", "initial_n"]]
+        .drop_duplicates()
+        .sort_values("p")
+    )
+    feature_note = "；".join(
+        f"p={int(row.p)} 时 FullPR 特征数为 {int(row.n_fullpr_features)}、"
+        f"D-opt 参数数为 {int(row.n_design_params)}、初始样本为 {int(row.initial_n)}"
+        for row in feature_rows.itertuples(index=False)
+    )
     lines = [
         "# 高维迭代 D-optimal 实验报告",
         "",
         "## 实验流程",
         "",
-        "本实验把原始数据集大小固定为 10000，并把输入维度提高到 p=20 和/或 p=50。先在原始训练集上训练 NN，作为新的目标模型；随后从训练池中均匀抽取初始设计集，用 FullPR surrogate 拟合 NN 输出。每一轮根据当前已经升级后的设计集计算 D-optimal leverage，选择下一批样本加入设计集，再重新拟合 FullPR surrogate。因此这里的 D-optimal 是迭代式的，而不是一次性选点。",
+        f"本实验把原始数据集大小固定为 10000，并测试输入维度 p={p_desc}。先在原始训练集上训练 NN，作为新的目标模型；随后从训练池中均匀抽取初始设计集，用 FullPR surrogate 拟合 NN 输出。每一轮根据当前已经升级后的设计集计算 D-optimal leverage，选择下一批样本加入设计集，再重新拟合 FullPR surrogate。因此这里的 D-optimal 是迭代式的，而不是一次性选点。",
         "",
         "## 设置",
         "",
@@ -429,7 +489,7 @@ def write_report(df, out_prefix):
         "",
         f"最后一轮共有 {pos}/{total} 个组合中 D-optimal 优于同预算随机升级中位数。这个表明：在高维情况下，D-optimal 仍然可以作为升级数据集的可执行策略，但效果依赖于 FullPR 特征空间是否足以表达 NN oracle 的局部行为，以及初始 uniform 设计是否已经覆盖了关键方向。",
         "",
-        "需要强调的是，p=50 时如果继续使用三阶 FullPR，特征数会超过两万，原始逐点贪心 D-optimal 会变成矩阵计算瓶颈。因此本实验使用二阶 FullPR 加特殊项，并采用按当前信息矩阵计算 batch leverage 的近似 D-optimal。这个版本保留了 D-optimal 的核心思想，同时能在 10000 个原始样本和高维输入下实际运行。",
+        f"需要强调的是，高维时如果继续使用三阶 FullPR，特征数会迅速膨胀，原始逐点贪心 D-optimal 会变成矩阵计算瓶颈。本实验使用二阶 FullPR 加特殊项，并采用 batch leverage 近似 D-optimal；当 D-opt 参数数超过当前已选样本数时，代码会用等价的样本空间 Woodbury 形式计算 leverage，避免直接分解巨大的参数空间信息矩阵。当前特征规模为：{feature_note}。",
         "",
         "## 输出文件",
         "",
@@ -469,7 +529,7 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=10000)
-    parser.add_argument("--p-values", type=int, nargs="*", default=[10, 20, 50])
+    parser.add_argument("--p-values", type=int, nargs="*", default=DEFAULT_P_VALUES)
     parser.add_argument("--cases", nargs="*", default=["highdim_poly2", "highdim_smooth"],
                         choices=["highdim_poly2", "highdim_smooth", "highdim_strong"])
     parser.add_argument("--degree", type=int, default=2)

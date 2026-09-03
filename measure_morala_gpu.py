@@ -1,22 +1,22 @@
 """
 measure_morala_gpu.py
 ─────────────────────────────────────────────────────────────────
-大规模 GPU 版本：n = 10000 样本、p = 10/20/50 三组输入维度的模拟。
+大规模 GPU 版本：n = 10000 样本、p = 10/20/50/100/200 五组输入维度的模拟。
 
 与 measure_morala.py（小规模 CPU 版）的关键差异：
   1. 神经网络训练在 GPU 上进行（此规模 GPU 才真正有意义：
-     10000×20 的数据 + 较宽的网络，矩阵乘法量足够大）；
+     10000×高维输入的数据 + 较宽的网络，矩阵乘法量足够大）；
   2. 用 mini-batch Adam 而非全批量 Rprop（10000 样本全批量 Rprop
      在高维下不稳定，且 mini-batch 更能发挥 GPU 吞吐）；
   3. 几何距离（Procrustes / PCA / Mahalanobis）仍在 CPU 上用
      scipy/sklearn 计算——这部分无法 GPU 化，但相对训练已是小头；
-  4. p=20 下完整交互多项式会组合爆炸，故 Full-PR 的 max_order
-     有上限保护（见 SAFE_MAX_ORDER），避免特征数失控。
+  4. 高维下完整交互多项式会组合爆炸，故 Full-PR 的 max_order
+     会同时受 SAFE_MAX_ORDER 和 FULLPR_FEATURE_CAP 保护，避免特征数失控。
 
 用法（Windows）：
   python measure_morala_gpu.py                     # 默认实验组
   python measure_morala_gpu.py --device cuda       # 强制 GPU
-  python measure_morala_gpu.py --n 10000 --p-values 10 20 50 --epochs 300
+  python measure_morala_gpu.py --n 10000 --p-values 10 20 50 100 200 --epochs 300
   python measure_morala_gpu.py --n 10000 --p 20 --epochs 300  # 单组 p 调试
   python measure_morala_gpu.py --repeats 20 --out-prefix gpu_results
 
@@ -28,6 +28,7 @@ measure_morala_gpu.py
 
 import argparse
 import math
+import os
 from itertools import combinations_with_replacement, product
 
 import numpy as np
@@ -49,10 +50,12 @@ try:
 except ImportError:
     _HAS_TAYLOR_EXPAND = False
 
-# p=20 下完整交互多项式的安全阶数上限：
+# 高维下完整交互多项式的安全阶数上限：
 #   C(20+order, order)：order=2→231, order=3→1771, order=4→10626。
 #   超过 4 阶特征数过大、内存与拟合都吃不消，故封顶 3（max_order=min(隐层数, 3)）。
 SAFE_MAX_ORDER = 3
+FULLPR_FEATURE_CAP = 30_000
+DEFAULT_P_VALUES = [10, 20, 50, 100, 200]
 
 
 # ─────────────────────────────────────────────
@@ -68,6 +71,20 @@ def get_device(pref="auto"):
         return torch.device("cuda")
     # auto
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def estimate_fullpr_feature_count(p, max_order, include_special=True):
+    n_poly = math.comb(p + max_order, max_order) - 1
+    n_special = 2 * p if include_special else 0
+    return n_poly + n_special
+
+
+def choose_fullpr_order(p, n_hidden, include_special=True):
+    requested = min(n_hidden, SAFE_MAX_ORDER)
+    for order in range(requested, 0, -1):
+        if estimate_fullpr_feature_count(p, order, include_special) <= FULLPR_FEATURE_CAP:
+            return order
+    return 1
 
 
 # ─────────────────────────────────────────────
@@ -98,7 +115,7 @@ def activation_derivs_at_zero(act_name, q):
 # ─────────────────────────────────────────────
 def poly_interaction_features(X, max_order):
     """所有总次数 1..max_order 的交互多项式特征。
-    p=20 时用 combinations_with_replacement 高效枚举（不做 p^order 的笛卡尔积）。"""
+    用 combinations_with_replacement 高效枚举（不做 p^order 的笛卡尔积）。"""
     n, p = X.shape
     feats, powers = [], []
     for total in range(1, max_order + 1):
@@ -114,7 +131,7 @@ def poly_interaction_features(X, max_order):
 def make_highdim_polynomial(n=10000, p=20, degree=3, noise_sd=0.1, rng=0,
                             n_active=8):
     """
-    高维多项式真值。为避免 p=20、degree=3 的系数维度爆炸导致信号被稀释，
+    高维多项式真值。为避免高维 degree=3/4 的系数维度爆炸导致信号被稀释，
     只让 n_active 个变量真正参与高阶交互（其余为噪声变量，更贴近真实高维数据）。
       X_i ~ N(mu_i, 1)，mu_i ~ U(-3, 3)（比低维版收窄，控制高阶项幅度）
       Y = 仅由前 n_active 个变量的 degree 阶多项式生成 + 噪声
@@ -363,12 +380,12 @@ def fit_full_pr(X_tr, y_tr, X_te, max_order, include_special=True):
 def run_experiment(case, activation, hidden_layers, device,
                    n=10000, p=20, q=3, scaling=(-1.0, 1.0),
                    epochs=300, batch_size=512, data_seed=0, init_seed=0,
-                   include_special=True, verbose=False):
+                   include_special=True, ltpr_max_p=0, verbose=False):
     torch.manual_seed(init_seed)
     np.random.seed(init_seed)
     hidden_layers = list(hidden_layers)
     n_hidden = len(hidden_layers)
-    max_order = min(n_hidden, SAFE_MAX_ORDER)   # p=20 下封顶，防特征爆炸
+    max_order = choose_fullpr_order(p, n_hidden, include_special)
 
     X_tr, X_te, y_tr, y_te = generate_dataset(case, n, p, data_seed, scaling)
     Xtr_t = torch.tensor(X_tr, dtype=torch.float32)
@@ -397,7 +414,7 @@ def run_experiment(case, activation, hidden_layers, device,
     res["act_io_sum"] = (float(np.nansum(list(act_io.values())))
                          if act_io else float("nan"))
 
-    # Taylor-PR（仅单隐层、光滑激活；p=20 下项数可观但可行，q 受 max_order 约束）
+    # Taylor-PR（仅单隐层、光滑激活；高维下 q 受 max_order 约束）
     pred_tpr = None
     if n_hidden == 1 and activation != "relu":
         q_eff = min(q, SAFE_MAX_ORDER)
@@ -413,8 +430,7 @@ def run_experiment(case, activation, hidden_layers, device,
     # 注意：逐层展开的项数随输入维度 p 与层数指数增长，高维下会组合爆炸。
     # 故仅在 p <= LTPR_MAX_P 时启用，否则跳过（高维下成本不可接受）。
     pred_ltpr = None
-    LTPR_MAX_P = 10
-    if _HAS_TAYLOR_EXPAND and activation != "relu" and p <= LTPR_MAX_P:
+    if _HAS_TAYLOR_EXPAND and activation != "relu" and p <= ltpr_max_p:
         try:
             ltpr_poly = expand_nn_to_polynomial(
                 model.cpu(), input_dim=p, order=min(q, SAFE_MAX_ORDER),
@@ -494,7 +510,8 @@ def run_experiment(case, activation, hidden_layers, device,
 # 实验网格 + 输出
 # ─────────────────────────────────────────────
 def run_grid(device, n=10000, p=20, epochs=300, batch_size=512,
-             repeats=10, data_seed=0, out_prefix="gpu_results"):
+             repeats=10, data_seed=0, out_prefix="gpu_results",
+             resume=True, checkpoint_every=1, ltpr_max_p=0):
     import pandas as pd
     from scipy.stats import spearmanr
 
@@ -511,20 +528,47 @@ def run_grid(device, n=10000, p=20, epochs=300, batch_size=512,
     print(f"  {len(base_configs)} 配置 × {len(depth_variants)} 深度 × 2 特殊项 "
           f"× {repeats} 重复 = {total} 次")
 
+    raw_path = f"{out_prefix}_raw.csv"
+    corr_path = f"{out_prefix}_correlations.csv"
     rows, done = [], 0
+    completed = set()
+    if resume and os.path.exists(raw_path):
+        old = pd.read_csv(raw_path)
+        rows = old.to_dict("records")
+        key_cols = ["case", "activation", "hidden", "special",
+                    "data_seed", "init_seed", "n", "p"]
+        if all(c in old.columns for c in key_cols):
+            for rec in rows:
+                completed.add(tuple(rec[c] for c in key_cols))
+            done = len(completed)
+            print(f"  续跑：已从 {raw_path} 载入 {done}/{total} 个完成 run")
+
+    def checkpoint():
+        if rows:
+            pd.DataFrame(rows).to_csv(raw_path, index=False, encoding="utf-8-sig")
+
     for (case, act, hidden, special) in plan:
         for init_seed in range(repeats):
+            key = (case, act, ",".join(map(str, hidden)), special,
+                   data_seed, init_seed, n, p)
+            if key in completed:
+                continue
             r = run_experiment(case, act, hidden, device, n=n, p=p,
                                epochs=epochs, batch_size=batch_size,
                                data_seed=data_seed, init_seed=init_seed,
-                               include_special=special, verbose=False)
+                               include_special=special, ltpr_max_p=ltpr_max_p,
+                               verbose=False)
             r["well_specified"] = (case == "highdim_poly3" and len(hidden) == 3)
             rows.append(r)
+            completed.add(key)
             done += 1
             if done % 10 == 0 or done == total:
                 print(f"  进度 {done}/{total}")
+            if checkpoint_every > 0 and (done % checkpoint_every == 0 or done == total):
+                checkpoint()
 
     df = pd.DataFrame(rows)
+    checkpoint()
 
     # 聚合表
     gk = ["case", "activation", "hidden", "special", "well_specified"]
@@ -604,10 +648,10 @@ def run_grid(device, n=10000, p=20, epochs=300, batch_size=512,
         plotted = False
 
     # CSV
-    df.to_csv(f"{out_prefix}_raw.csv", index=False, encoding="utf-8-sig")
-    corr_df.to_csv(f"{out_prefix}_correlations.csv", index=False, encoding="utf-8-sig")
-    print(f"\n已导出：{out_prefix}_raw.csv（{len(df)} 行）、"
-          f"{out_prefix}_correlations.csv"
+    df.to_csv(raw_path, index=False, encoding="utf-8-sig")
+    corr_df.to_csv(corr_path, index=False, encoding="utf-8-sig")
+    print(f"\n已导出：{raw_path}（{len(df)} 行）、"
+          f"{corr_path}"
           + (f"、{out_prefix}_*.png" if plotted else ""))
     return df, corr_df
 
@@ -688,18 +732,26 @@ def _plots(df, corr_pairs, out_prefix):
 
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="高维 GPU 版 Morala 实验 (n=10000, p=10/20/50)")
+    ap = argparse.ArgumentParser(
+        description="高维 GPU 版 Morala 实验 (n=10000, p=10/20/50/100/200)")
     ap.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     ap.add_argument("--n", type=int, default=10000)
     ap.add_argument("--p", type=int, default=None,
                     help="Run a single p value; overrides --p-values.")
-    ap.add_argument("--p-values", type=int, nargs="*", default=[10, 20, 50],
+    ap.add_argument("--p-values", type=int, nargs="*", default=DEFAULT_P_VALUES,
                     help="Input dimensions to run when --p is not set.")
     ap.add_argument("--epochs", type=int, default=300)
     ap.add_argument("--batch-size", type=int, default=512)
     ap.add_argument("--repeats", type=int, default=10)
     ap.add_argument("--data-seed", type=int, default=0)
     ap.add_argument("--out-prefix", default="gpu_results")
+    ap.add_argument("--no-resume", action="store_true",
+                    help="Do not resume from an existing <out-prefix>_raw.csv checkpoint.")
+    ap.add_argument("--checkpoint-every", type=int, default=1,
+                    help="Write <out-prefix>_raw.csv every N completed runs.")
+    ap.add_argument("--ltpr-max-p", type=int, default=0,
+                    help="Enable LayerTaylor-PR only when p <= this value. "
+                         "Default 0 skips it for high-dimensional comparability.")
     ap.add_argument("--case", default=None,
                     choices=["highdim_poly3", "highdim_poly4", "highdim_nonlinear"])
     ap.add_argument("--activation", default="softplus", choices=list(ACTIVATIONS))
@@ -719,7 +771,8 @@ if __name__ == "__main__":
             print(f"p={p}")
             r = run_experiment(args.case, args.activation, hidden, device,
                                n=args.n, p=p, epochs=args.epochs,
-                               batch_size=args.batch_size, verbose=True)
+                               batch_size=args.batch_size,
+                               ltpr_max_p=args.ltpr_max_p, verbose=True)
             for k, v in r.items():
                 print(f"  {k}: {v}")
     else:
@@ -727,4 +780,7 @@ if __name__ == "__main__":
             out_prefix = args.out_prefix if len(p_values) == 1 else f"{args.out_prefix}_p{p}"
             run_grid(device, n=args.n, p=p, epochs=args.epochs,
                      batch_size=args.batch_size, repeats=args.repeats,
-                     data_seed=args.data_seed, out_prefix=out_prefix)
+                     data_seed=args.data_seed, out_prefix=out_prefix,
+                     resume=not args.no_resume,
+                     checkpoint_every=args.checkpoint_every,
+                     ltpr_max_p=args.ltpr_max_p)

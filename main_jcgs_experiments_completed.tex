@@ -1,0 +1,952 @@
+% main_jcgs_cleaned.tex
+% Cleaned Taylor & Francis interact template version
+\documentclass[]{interact}
+
+% Figures and tables
+\usepackage{graphicx}
+\usepackage{epstopdf}
+\usepackage[caption=false]{subfig}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{threeparttable}
+\usepackage{diagbox}
+\usepackage{siunitx}
+\sisetup{detect-all}
+\usepackage{placeins}
+
+% Mathematics and theorem environments
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{amsthm}
+\usepackage{mathrsfs}
+
+% Algorithms
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{array}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+% Text and references
+\usepackage[T1]{fontenc}
+\usepackage{csquotes}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{microtype}
+\usepackage[title]{appendix}
+\usepackage{enumitem}
+\usepackage{comment}
+
+% Taylor & Francis / natbib author-year citations
+\usepackage[natbibapa,nodoi]{apacite}
+\setlength\bibhang{12pt}
+\renewcommand\bibliographytypesize{\fontsize{10}{12}\selectfont}
+
+% Load cleveref late, after most packages
+\usepackage{cleveref}
+\crefname{section}{Section}{Sections}
+\Crefname{section}{Section}{Sections}
+\crefname{equation}{Equation}{Equations}
+\Crefname{equation}{Equation}{Equations}
+\crefname{figure}{Figure}{Figures}
+\Crefname{figure}{Figure}{Figures}
+\crefname{table}{Table}{Tables}
+\Crefname{table}{Table}{Tables}
+\crefname{algorithm}{Algorithm}{Algorithms}
+\Crefname{algorithm}{Algorithm}{Algorithms}
+\crefname{theorem}{Theorem}{Theorems}
+\Crefname{theorem}{Theorem}{Theorems}
+
+% Theorem-like structures
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+\newtheorem{notation}{Notation}
+
+\title{Report: Bridge between neural network and Polynomial model}
+
+\author{
+\name{Rundong Zhou\textsuperscript{a}\thanks{Corresponding author. Email: rundong.zhou@kcl.ac.uk},
+Steven Gilmour\textsuperscript{a},
+Kalliopi Mylona\textsuperscript{a}}
+\affil{\textsuperscript{a}Department of Mathematics, King's College London, Strand, WC2R 2LS, London, UK}
+}
+
+\begin{document}
+
+
+
+
+%%==================================%%
+%% Sample for unstructured abstract %%
+%%==================================%%
+\maketitle
+
+\begin{abstract}
+Neural networks have been widely adopted across numerous fields in modern society. However, their black-box nature remains a major limitation. A lack of interpretability may discourage their deployment in practice and hinder the analysis of their internal behavior. Moreover, many established mathematical and statistical methods developed for conventional models, such as polynomial models, cannot be directly applied to neural networks.
+
+To address this issue, we propose a model-distance-based metric for quantifying the discrepancy between a neural network and a polynomial model. We investigate the relationship between this distance and the fitting performance of the two models and compare their overall model quality. Furthermore, we use the proposed distance as a weighting factor to extend polynomial-model-based data-processing and statistical methods to neural networks. This framework provides a potential bridge between the predictive flexibility of neural networks and the interpretability and analytical tractability of traditional polynomial models.
+
+\end{abstract}
+
+\begin{keywords}
+Optimal Design; Data Reduction; Machine Learning; Compound Criteria; Cluster Regrouping
+\end{keywords}
+
+
+%-------------------------------------------
+% Paper Body
+%-------------------------------------------
+
+
+%--- Section ---%
+\section{Introduction}
+\label{sec:intro}
+This report presents a series of recent experiments investigating the
+distance between neural networks and polynomial models. The remainder of
+this section introduces the model setup and notation; subsequent sections
+define the proposed distance metric and present the corresponding
+experimental results.
+
+\section{Preliminaries}
+\label{sec:pre}
+
+Let
+\[
+\mathcal{D}=\bigl\{(\mathbf{x}^{(n)},y^{(n)})\bigr\}_{n=1}^{N}
+\]
+denote the dataset, where $\mathbf{x}^{(n)}\in\mathbb{R}^{p}$ and
+$y^{(n)}\in\mathbb{R}$ are the input vector and the response of the $n$-th
+observation, respectively. We write $\mathbf{x}=(x_1,\dots,x_p)^{\top}$,
+where the subscript $j\in\{1,\dots,p\}$ indexes the input dimensions.
+
+Consider a neural network with $l$ parameterized layers. For
+$i=1,\dots,l$, the forward propagation is defined as
+\begin{equation}
+\mathbf{x}^{[i]} = A^{[i]}\!\bigl(W^{[i]}\mathbf{x}^{[i-1]}
+                  + \mathbf{b}^{[i]}\bigr),
+\label{eq:forward}
+\end{equation}
+where $W^{[i]}\in\mathbb{R}^{d_i\times d_{i-1}}$ and
+$\mathbf{b}^{[i]}\in\mathbb{R}^{d_i}$ denote the weight matrix and bias
+vector of the $i$-th layer, $d_i$ is the width of the $i$-th layer, and
+$A^{[i]}$ is the corresponding activation function applied elementwise.
+Here $\mathbf{x}^{[0]}=\mathbf{x}$ (so that $d_0=p$) denotes the network
+input, and the final prediction is $\hat{y}=\mathbf{x}^{[l]}$ with
+$d_l=1$.
+
+We propose two approaches for constructing polynomial models. The first
+follows \cite{morala2021towards} and derives a polynomial approximation of
+the neural network via repeated Taylor expansions. Since each Taylor
+expansion introduces truncation error, and repeated expansions may further
+amplify such errors, this construction serves only as a reference for
+networks with more than one layer. The second approach directly constructs
+a polynomial model containing all potentially non-zero terms. This
+construction relies on the fact that, under the network architecture and
+assumptions considered in this report, the maximum polynomial degree is
+bounded above by the number of layers $l$:
+\begin{equation}
+\hat{y}
+=\sum_{\substack{\boldsymbol{\alpha}\in\mathbb{N}_0^{p}\\
+                 |\boldsymbol{\alpha}|\le l}}
+ \beta_{\boldsymbol{\alpha}}\,
+ \prod_{j=1}^{p} x_j^{\alpha_j},
+\label{eq:fullpoly}
+\end{equation}
+where $\boldsymbol{\alpha}=(\alpha_1,\dots,\alpha_p)$ is a multi-index,
+$|\boldsymbol{\alpha}|=\sum_{j=1}^{p}\alpha_j$ denotes its total degree,
+and $\beta_{\boldsymbol{\alpha}}\in\mathbb{R}$ are the model coefficients.
+
+In the remainder of this paper, the neural network model is abbreviated as NN, the model derived using Taylor expansion as TPR, and the model specified in ananan as FPR.
+
+
+
+\section{Distances and Measures}
+
+In this report, we primarily employ four types of measures. First, we use the Procrustes shape distance between the point clouds of the model response surfaces produced by different models, defined as $(G_f=[(x_i,f(x_i))])$ and $(G_g=[(x_i,g(x_i))])$. Second, for each activation layer in the neural network, we compute the Procrustes shape distance between the pre-activation representation $u$ and the post-activation representation $g(u)$, and sum these distances across all activation layers. Third, we measure both the shape changes between adjacent layers within the neural network and the overall shape change from the input to the output. Fourth, we calculate the Mahalanobis distance between the prediction vectors produced by NN and FullPR. This measure first estimates the pooled covariance matrix and then uses its inverse to quantify the difference between the corresponding mean prediction vectors.
+
+In addition, we use the mean squared error (MSE),
+$$\mathrm{MSE}(f,y)=\frac{1}{n}\sum_{i=1}^{n}\left(f(x_i)-y_i\right)^2,$$
+to quantify the average squared discrepancy between the model predictions and the observed values. We then take the square root of the MSE to obtain the root mean squared error (RMSE). The absolute difference
+$$\left|\mathrm{RMSE}_{\mathrm{NN}}-\mathrm{RMSE}_\mathrm{FPR}\right|$$
+is used to compare the predictive errors of NN and FPR and to determine whether the two models achieve similar levels of predictive performance.
+
+
+\section{Experiments}
+
+
+We conducted four groups of experiments that form a progressively structured experimental framework. The first stage establishes the geometric relationship between neural networks and polynomial models. The second stage examines whether this relationship can be used to guide D-optimal sampling. The final stage converts the proposed distance measure into a practical sampling strategy.
+
+We used multiple datasets and several model-parameter configurations, as detailed in the tables \Cref{tab:lowdim-datasets,tab:highdim-datasets} below.
+
+The low-dimensional geometry experiments use $n=200$ samples and $p=3$ input variables. Inputs are generated before scaling, then both $X$ and $y$ are min--max scaled to $[-1,1]$ after a fixed 75/25 train/test split. The data seed is fixed at 0 in the final grid, while NN initialization seeds vary.
+
+\begin{longtable}{p{0.25\textwidth}p{0.47\textwidth}p{0.20\textwidth}}
+\caption{Low-dimensional datasets}
+\label{tab:lowdim-datasets} \\
+\toprule
+\textbf{Dataset} & \textbf{Data-generating process} & \textbf{Purpose} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Dataset} & \textbf{Data-generating process} & \textbf{Purpose} \\
+\midrule
+\endhead
+
+\bottomrule
+\endlastfoot
+
+\texttt{paper\_poly3}
+&
+\[
+y=\beta_0+\sum_{1\leq |\alpha|\leq 3}\beta_{\alpha}x^{\alpha}+\epsilon
+\]
+& Well-specified polynomial case. \\
+
+\addlinespace[0.4em]
+
+\texttt{paper\_poly4}
+&
+\[
+y=\beta_0+\sum_{1\leq |\alpha|\leq 4}\beta_{\alpha}x^{\alpha}+\epsilon
+\]
+& Under-specified polynomial case. \\
+
+\addlinespace[0.4em]
+
+\texttt{smooth\_nonlinear}
+&
+\[
+y=\sin(x_1)+x_2^2+x_2x_3+x_3+\epsilon
+\]
+& Fixed smooth nonlinear case. \\
+
+\addlinespace[0.4em]
+
+\texttt{smooth\_nonlinear\_rand}
+&
+\[
+y=a\sin(\omega x_1+\phi)+x_2^2+x_2x_3+x_3+\epsilon
+\]
+& Random-frequency nonlinear case. \\
+
+\end{longtable}
+
+
+The high-dimensional experiments use $n=10000$ original samples, a 75/25 train/test split, and $p\in\{20,50\}$. Inputs are generated from a standard normal distribution, split into training and test sets, and scaled to $[-1,1]$. The response is also scaled to $[-1,1]$. The noise level is $\sigma=0.03$.
+
+\begin{longtable}{p{0.25\textwidth}p{0.47\textwidth}p{0.20\textwidth}}
+\caption{High-dimensional datasets}
+\label{tab:highdim-datasets} \\
+\toprule
+\textbf{Dataset} & \textbf{Data-generating process} & \textbf{Purpose} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Dataset} & \textbf{Data-generating process} & \textbf{Purpose} \\
+\midrule
+\endhead
+
+\bottomrule
+\endlastfoot
+
+\texttt{highdim\_poly2}
+&
+\[
+y=\Phi_2(x)^\top\beta+\epsilon
+\]
+& Quadratic reference. \\
+
+\addlinespace[0.4em]
+
+\texttt{highdim\_smooth}
+&
+\[
+y=\Phi_2(x)^\top\beta+f_{\mathrm{smooth}}(x)+\epsilon
+\]
+& Smooth nonlinear case. \\
+
+\addlinespace[0.4em]
+
+\texttt{highdim\_strong}
+&
+\[
+y=\Phi_2(x)^\top\beta+f_{\mathrm{strong}}(x)+\epsilon
+\]
+& Strong nonlinear case. \\
+
+\addlinespace[0.4em]
+
+\texttt{highdim\_local}
+&
+\[
+y=f_{\mathrm{base}}(x)+f_{\mathrm{local}}(x)+\epsilon
+\]
+& Localized structure. \\
+
+\addlinespace[0.4em]
+
+\texttt{highdim\_highfreq}
+&
+\[
+y=f_{\mathrm{base}}(x)+f_{\mathrm{highfreq}}(x)+\epsilon
+\]
+& High-frequency structure. \\
+
+\end{longtable}
+
+Here, \(x\in\mathbb{R}^p\), \(p\in\{20,50\}\), and 
+\(\epsilon\sim N(0,\sigma^2)\) with \(\sigma=0.03\). 
+The map \(\Phi_2(x)\) denotes the degree-2 polynomial feature map, and 
+\(\beta\) is a random coefficient vector generated for each data seed.
+
+The nonlinear components are defined as follows:
+\[
+f_{\mathrm{smooth}}(x)
+=
+0.45\sin(2.5x_1+0.4)
++
+0.30\cos(1.5x_2x_3)
++
+0.25\tanh(x_4+0.5x_5).
+\]
+
+\[
+\begin{aligned}
+f_{\mathrm{strong}}(x)
+={}&
+0.70\sin(4x_1+0.7)
++
+0.45\cos(3x_2x_3)  \\
+&+
+0.35\sin(2x_3+x_4)
++
+0.30\tanh(x_5x_6-x_7+0.5x_8).
+\end{aligned}
+\]
+
+For the local and high-frequency datasets, the shared low-order component is
+\[
+f_{\mathrm{base}}(x)
+=
+0.08x_1+0.06x_2^2-0.05x_3x_4.
+\]
+
+The localized component is
+\[
+\begin{aligned}
+f_{\mathrm{local}}(x)
+={}&
+1.65\exp\!\left(-26\|x_{1:6}-c\|^2\right) \\
+&+
+0.35\exp\!\left(-14(x_5+0.65x_6-0.35x_7x_8)^2\right) \\
+&+
+0.18\sin(5x_1x_2),
+\end{aligned}
+\]
+where
+\[
+c=(0.15,-0.20,0.10,-0.15,0,0).
+\]
+
+The high-frequency component is
+\[
+\begin{aligned}
+f_{\mathrm{highfreq}}(x)
+={}&
+0.55\sin(8x_1+0.35s)
++
+0.45\sin(9x_2x_3) \\
+&+
+0.30\cos(7x_4-0.2)
++
+0.25\sin\{5(x_5+x_6-x_7x_8)\},
+\end{aligned}
+\]
+where \(s\) denotes the data seed.
+
+
+All experiments were fully evaluated on the datasets described above.
+
+
+
+
+\subsection{Geometric Equivalence}
+The first experiment investigates the geometric equivalence between neural networks and polynomial regression models. Specifically, it addresses two questions: whether a neural network is close to polynomial regression in a geometric sense, and whether geometric similarity between the two models is associated with similar predictive performance. To answer these questions, we compare NN, FPR, and TPR.
+
+
+
+\begin{longtable}{p{0.22\textwidth}p{0.32\textwidth}p{0.38\textwidth}}
+\caption{Figure axis names and variables used in the report}
+\label{tab:figure-axis-variables} \\
+\toprule
+\textbf{Category} & \textbf{Name in Figures} & \textbf{Meaning} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Category} & \textbf{Name in Figures} & \textbf{Meaning} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{3}{r}{Continued on next page} \\
+\midrule
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+Performance gap
+& \texttt{NN\_mse\_vs\_y}
+& NN prediction error against true values. \\
+
+Performance gap
+& \texttt{FPR\_mse\_vs\_y}
+& FullPR prediction error against true values. \\
+
+Performance gap
+& \texttt{TPR\_mse\_vs\_y}
+& Taylor-PR prediction error against true values. \\
+
+Performance gap
+& \texttt{LTPR\_mse\_vs\_y}
+& LayerTaylor-PR prediction error against true values. \\
+
+Performance gap
+& \texttt{FPR\_mse\_vs\_NN}
+& FullPR error when matching NN outputs. \\
+
+Performance gap
+& \texttt{TPR\_mse\_vs\_NN}
+& Taylor-PR error when matching NN outputs. \\
+
+Performance gap
+& \texttt{LTPR\_mse\_vs\_NN}
+& LayerTaylor-PR error when matching NN outputs. \\
+
+Performance gap
+& \texttt{abs\_rmse\_gap}
+& Absolute RMSE difference between NN and FullPR. \\
+
+Performance gap
+& \texttt{NN\_FPR\_log10}
+& Log-scale ratio between NN and FullPR errors. \\
+
+Performance gap
+& \texttt{win rate vs NN (\%)}
+& Fraction of runs where a model has lower MSE than NN. \\
+
+Performance gap
+& \texttt{median improvement vs NN (\%)}
+& Median percentage improvement relative to NN. \\
+
+Performance gap
+& \texttt{MSE vs NN oracle}
+& Surrogate error measured against NN oracle outputs. \\
+
+Performance gap
+& \texttt{Final test MSE}
+& Final test error after sampling updates. \\
+
+\midrule
+
+Measure
+& \texttt{shape\_NN\_FPR\_in}
+& Procrustes shape distance between NN and FullPR in the data region. \\
+
+Measure
+& \texttt{shape\_NN\_FPR\_ext}
+& Procrustes shape distance between NN and FullPR in the extrapolation region. \\
+
+Measure
+& \texttt{shape\_NN\_LTPR}
+& Procrustes shape distance between NN and LayerTaylor-PR. \\
+
+Measure
+& \texttt{shape\_LTPR\_FPR}
+& Procrustes shape distance between LayerTaylor-PR and FullPR. \\
+
+Measure
+& \texttt{act\_io\_scaled\_sum}
+& Total activation shape change with scaled input. \\
+
+Measure
+& \texttt{act\_io\_scaled\_mean}
+& Average activation shape change with scaled input. \\
+
+Measure
+& \texttt{act\_io\_unscaled\_sum}
+& Total activation shape change with unscaled input. \\
+
+Measure
+& \texttt{act\_io\_unscaled\_mean}
+& Average activation shape change with unscaled input. \\
+
+Measure
+& \texttt{act\_pair\_mean}
+& Average adjacent-layer shape change. \\
+
+Measure
+& \texttt{io\_shape}
+& Overall shape change from input to output. \\
+
+Measure
+& \texttt{mahal\_NN\_FPR}
+& Mahalanobis distance between NN and FullPR predictions. \\
+
+Measure
+& \texttt{pilot-estimated shape(NN, FullPR)}
+& Pilot-stage shape distance between NN and FullPR. \\
+
+Measure
+& \texttt{Pilot NN-FullPR shape distance}
+& Pilot NN-FullPR shape distance used for transfer diagnosis. \\
+
+Measure
+& \texttt{D-optimal fraction from NN-PR closeness}
+& D-optimal sampling weight learned from NN-PR distance. \\
+
+\midrule
+
+Other
+& \texttt{Selected training points}
+& Number of selected training samples. \\
+
+Other
+& \texttt{Batch round}
+& Batch update iteration. \\
+
+Other
+& \texttt{Gain vs random median MSE (\%)}
+& MSE gain relative to the random baseline. \\
+
+Other
+& \texttt{D-optimal gain vs random median MSE (\%)}
+& D-optimal MSE gain over random sampling. \\
+
+Other
+& \texttt{Final gain vs random (\%)}
+& Final percentage gain over random sampling. \\
+
+Other
+& \texttt{Mean final gain vs random (\%)}
+& Average final gain over random sampling. \\
+
+Other
+& \texttt{Gain vs random at same round (\%)}
+& Gain over random sampling at the same batch round. \\
+
+Other
+& \texttt{NN}
+& Neural network model. \\
+
+Other
+& \texttt{FPR} / \texttt{FullPR}
+& Full polynomial regression model. \\
+
+Other
+& \texttt{TPR} / \texttt{Taylor-PR}
+& Taylor polynomial regression model. \\
+
+Other
+& \texttt{LTPR} / \texttt{LayerTaylor-PR}
+& Layer-wise Taylor polynomial regression model. \\
+
+Other
+& $G_f=\{(x_i,f(x_i))\}$
+& Response-surface point cloud of model $f$. \\
+
+Other
+& $G_g=\{(x_i,g(x_i))\}$
+& Response-surface point cloud of model $g$. \\
+
+Other
+& $u$
+& Pre-activation representation. \\
+
+Other
+& $g(u)$
+& Post-activation representation. \\
+
+\end{longtable}
+
+\newcommand{\maybeincludegraphics}[2][]{%
+  \IfFileExists{#2}{\includegraphics[#1]{#2}}{%
+    \fbox{\parbox{0.86\linewidth}{Missing figure file: \detokenize{#2}}}%
+  }%
+}
+
+\subsection{Experimental Settings}
+
+The geometric-equivalence experiment uses the four low-dimensional datasets in
+\Cref{tab:lowdim-datasets}. For each configuration, we fit NN, FPR, TPR, and
+LTPR models and record both predictive errors and geometric distances. The
+default low-dimensional grid uses $n=200$, $p=3$, a 75/25 train/test split,
+min--max scaling to $[-1,1]$, Taylor truncation order $q=3$, and 50 NN
+initialization seeds for each configuration. The tested hidden-layer structures
+are $(4)$, $(8,4)$, and $(16,8,4)$, with activation functions softplus, tanh,
+and sigmoid. The fixed smooth nonlinear dataset is evaluated with softplus in
+the final grid, while the polynomial and random-frequency datasets are evaluated
+with all three activations.
+
+For the high-dimensional experiments, the original sample size is $n=10000$,
+with 7500 training-pool points and 2500 test points. We use
+$p\in\{20,50\}$, data seeds $0,\ldots,4$ in the measure-weighted experiment,
+and data seeds $0,1,2$ in the paper-scale iterative D-optimal experiment. The
+NN oracle in the iterative D-optimal experiment uses hidden layers
+$(128,64,32)$, tanh activation, and 1000 training epochs. The measure-weighted
+experiment uses a single-hidden-layer tanh NN with hidden size 64 and 350
+training epochs. In both high-dimensional experiments, the FullPR surrogate is
+based on degree-2 polynomial features, optionally augmented with special
+features, and the main evaluation metric is MSE against the NN oracle or the
+held-out test response.
+
+\begin{table}[htbp]
+\centering
+\caption{Main experimental parameter settings}
+\label{tab:experiment-parameters}
+\begin{tabular}{p{0.28\textwidth}p{0.62\textwidth}}
+\toprule
+\textbf{Experiment} & \textbf{Main parameter settings} \\
+\midrule
+Low-dimensional geometry
+& $n=200$, $p=3$, 75/25 split, scaling to $[-1,1]$, $q=3$, hidden layers
+$(4)$, $(8,4)$, $(16,8,4)$, activations softplus/tanh/sigmoid, 50 NN
+initialization seeds. \\
+
+Pilot D-optimal transfer
+& $n_{\mathrm{full}}=5000$, hidden layers $(16,8,4)$, pilot fractions
+$0.005$, $0.01$, $0.1$, 3000 candidate points, 1000 evaluation points,
+budgets 26 and 52, 30 random repeats, CPU/CUDA comparison. \\
+
+High-dimensional iterative D-optimal
+& $n=10000$, $p=20,50$, initial fractions $0.05$ and $0.1$, 5 D-optimal
+iterations, batch size 500, random baseline repeated 10 times, CPU/CUDA
+comparison. \\
+
+Measure-weighted sampling
+& $n=10000$, $p=20,50$, five high-dimensional datasets, data seeds
+$0,\ldots,4$, initial seeds $0,1$, initial fraction 0.05, 6 batch rounds,
+batch size 500, four strategies: measure-weighted, random, D-optimal, and
+Latin hypercube. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Geometric Equivalence}
+
+The first experiment evaluates whether NN and polynomial models are close as
+response surfaces and whether this geometric closeness predicts performance
+closeness. The key relationship tested in this section is
+\[
+    \texttt{shape\_NN\_FPR\_in}
+    \quad \longrightarrow \quad
+    \texttt{abs\_rmse\_gap}.
+\]
+Here, a small value of \texttt{shape\_NN\_FPR\_in} indicates that the NN and
+FPR response surfaces are geometrically similar in the data region, while a
+small value of \texttt{abs\_rmse\_gap} indicates that the two models have
+similar predictive error levels. We also inspect extrapolation shape distance,
+LTPR failure behavior, and model-vs-NN win rates.
+
+\begin{figure}[htbp]
+\centering
+\subfloat[paper\_poly3 geometry]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_paper_poly3_geometry.png}}
+\hfill
+\subfloat[paper\_poly3 MSE]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_paper_poly3_mse.png}}
+\caption{Geometry and MSE diagnostics for \texttt{paper\_poly3}.}
+\label{fig:paper-poly3-diagnostics}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\subfloat[paper\_poly4 geometry]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_paper_poly4_geometry.png}}
+\hfill
+\subfloat[paper\_poly4 MSE]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_paper_poly4_mse.png}}
+\caption{Geometry and MSE diagnostics for \texttt{paper\_poly4}.}
+\label{fig:paper-poly4-diagnostics}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\subfloat[smooth\_nonlinear geometry]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_smooth_nonlinear_geometry.png}}
+\hfill
+\subfloat[smooth\_nonlinear MSE]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_smooth_nonlinear_mse.png}}
+\caption{Geometry and MSE diagnostics for \texttt{smooth\_nonlinear}.}
+\label{fig:smooth-nonlinear-diagnostics}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\subfloat[smooth\_nonlinear\_rand geometry]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_smooth_nonlinear_rand_geometry.png}}
+\hfill
+\subfloat[smooth\_nonlinear\_rand MSE]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_smooth_nonlinear_rand_mse.png}}
+\caption{Geometry and MSE diagnostics for \texttt{smooth\_nonlinear\_rand}.}
+\label{fig:smooth-nonlinear-rand-diagnostics}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\maybeincludegraphics[width=0.78\textwidth]{figure/results_overview_boxplot.png}
+\caption{Overview of the main geometric and performance quantities across
+datasets, activations, and repeated runs.}
+\label{fig:overview-boxplot}
+\end{figure}
+
+\FloatBarrier
+
+After removing unconverged NN runs and separately marking unstable LTPR cases,
+the cleaned diagnostic plots show the central empirical pattern more clearly:
+NN--FPR shape distance is positively associated with the RMSE gap. This supports
+the interpretation that geometric similarity of response surfaces is informative
+about predictive-performance similarity.
+
+\begin{figure}[htbp]
+\centering
+\subfloat[paper\_poly3]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_clean_paper_poly3_clean_geom.png}}
+\hfill
+\subfloat[paper\_poly4]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_clean_paper_poly4_clean_geom.png}}
+
+\subfloat[smooth\_nonlinear]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_clean_smooth_nonlinear_clean_geom.png}}
+\hfill
+\subfloat[smooth\_nonlinear\_rand]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_clean_smooth_nonlinear_rand_clean_geom.png}}
+\caption{Cleaned geometric diagnostics after excluding unconverged NN runs and
+handling LTPR failures.}
+\label{fig:cleaned-geometry}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\subfloat[paper\_poly3]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_clean_paper_poly3_ltpr_failure.png}}
+\hfill
+\subfloat[paper\_poly4]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_clean_paper_poly4_ltpr_failure.png}}
+
+\subfloat[smooth\_nonlinear]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_clean_smooth_nonlinear_ltpr_failure.png}}
+\hfill
+\subfloat[smooth\_nonlinear\_rand]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_clean_smooth_nonlinear_rand_ltpr_failure.png}}
+\caption{LayerTaylor-PR failure tails. These plots isolate the cases in which
+Taylor expansion leaves its stable approximation regime.}
+\label{fig:ltpr-failure}
+\end{figure}
+
+\subsection{Model Comparison Against NN}
+
+The geometry experiment asks whether models are similar; the NN-baseline
+comparison asks which model is more accurate against the true response. For each
+run, a polynomial model is counted as better than NN if its MSE against the true
+response is smaller than \texttt{NN\_mse\_vs\_y}. The left panel of each
+baseline figure reports the win rate, while the right panel reports the median
+percentage improvement relative to NN.
+
+\begin{figure}[htbp]
+\centering
+\subfloat[paper\_poly3]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_clean_paper_poly3_nn_baseline.png}}
+\hfill
+\subfloat[paper\_poly4]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_clean_paper_poly4_nn_baseline.png}}
+
+\subfloat[smooth\_nonlinear]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_clean_smooth_nonlinear_nn_baseline.png}}
+\hfill
+\subfloat[smooth\_nonlinear\_rand]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/results_clean_smooth_nonlinear_rand_nn_baseline.png}}
+\caption{Model performance relative to NN. Positive improvement means that the
+polynomial model has lower MSE than NN in that run.}
+\label{fig:nn-baseline}
+\end{figure}
+
+\FloatBarrier
+
+The NN-baseline comparison separates two claims. The first claim is geometric:
+NN and FPR can be close in response-surface shape. The second claim is
+predictive: one model may still be more accurate than the other on the true
+response. In the experiments, FullPR is the only polynomial model that
+regularly competes with NN, while Taylor-based models are more useful as
+interpretive or approximation tools than as uniformly better predictors.
+
+\subsection{Pilot D-optimal Transfer}
+
+The second experiment tests whether a pilot estimate of the NN--FullPR distance
+can be used as a practical diagnostic before transferring FullPR-based
+D-optimal sampling to NN distillation. For each dataset and pilot fraction, we
+first train a pilot NN and a pilot FullPR model, estimate their shape distance
+on pilot validation points, and then treat the pilot NN as an oracle. We query
+the oracle at points chosen by a FullPR D-optimal design and compare the fitted
+FullPR surrogate against same-budget random designs.
+
+\begin{figure}[htbp]
+\centering
+\subfloat[Pilot distance versus gain]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/paper_pilot_dopt_cpu_gpu_distance_vs_gain.png}}
+\hfill
+\subfloat[Gain by dataset]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/paper_pilot_dopt_cpu_gpu_gain_by_dataset.png}}
+\caption{Pilot-distance gated D-optimal transfer experiment. A smaller pilot
+NN--FullPR shape distance is used as evidence that FullPR-based D-optimal
+sampling may transfer to NN distillation.}
+\label{fig:pilot-dopt}
+\end{figure}
+
+This experiment moves the distance measure from a post-hoc diagnostic to a
+pre-check for experimental design. A positive D-optimal gain indicates that the
+D-optimal surrogate has lower MSE against the NN oracle than the random-design
+median under the same query budget.
+
+\subsection{High-dimensional Iterative D-optimal Experiment}
+
+The third experiment evaluates a paper-scale version of the D-optimal transfer
+idea in high dimensions. An NN oracle is trained on the full training pool. We
+then start with a small uniform design set, fit a degree-2 FullPR surrogate to
+the NN oracle on the current design set, select a new batch by approximate
+D-optimal leverage, and refit the surrogate. This process is repeated for five
+iterations and compared with random additions under the same sample budget.
+
+\begin{figure}[htbp]
+\centering
+\maybeincludegraphics[width=0.82\textwidth]{figure/paper_highdim_iter_dopt_final_gain_ci.png}
+\caption{Final-iteration D-optimal gain over the same-budget random-upgrade
+median, with 95\% confidence intervals.}
+\label{fig:highdim-final-gain}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\subfloat[CPU gain curve]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/paper_highdim_iter_dopt_cpu_gain_mean_ci.png}}
+\hfill
+\subfloat[CUDA gain curve]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/paper_highdim_iter_dopt_cuda_gain_mean_ci.png}}
+\caption{Mean D-optimal MSE gain over random upgrading across iterations.}
+\label{fig:highdim-gain-curves}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\subfloat[CPU MSE curve]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/paper_highdim_iter_dopt_cpu_mse_mean_ci.png}}
+\hfill
+\subfloat[CUDA MSE curve]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/paper_highdim_iter_dopt_cuda_mse_mean_ci.png}}
+\caption{MSE curves for D-optimal surrogates and random baselines in the
+high-dimensional iterative experiment.}
+\label{fig:highdim-mse-curves}
+\end{figure}
+
+\FloatBarrier
+
+The high-dimensional iterative experiment tests whether an upgraded design set
+can continue to serve as the condition for the next D-optimal update. The main
+evidence is the gain over the random median at each selected sample size. Stable
+positive gain indicates that the FullPR feature space still contains useful
+design information for approximating the NN oracle.
+
+\subsection{Measure-weighted Batch Sampling}
+
+The final experiment converts the distance measure into a sampling policy. Each
+dataset is first reduced to a small uniform pilot subset. On this subset, we fit
+a pilot NN, compare it with FullPR and Taylor-PR, and compute
+\[
+    d_{\mathrm{FPR}}=d(\mathrm{NN},\mathrm{FPR}),\qquad
+    d_{\mathrm{TYPR}}=d(\mathrm{NN},\mathrm{TYPR}).
+\]
+The main experiment uses the conservative combined distance
+\[
+    d_{\mathrm{comb}}=\frac{d_{\mathrm{FPR}}+d_{\mathrm{TYPR}}}{2}.
+\]
+After normalization, this distance is mapped to a bounded D-optimal weight. A
+small distance gives a high D-optimal fraction, while a large distance preserves
+more random exploration. We compare the resulting measure-weighted strategy
+against all-random sampling, all-D-optimal sampling, and Latin hypercube
+candidate selection.
+
+\begin{figure}[htbp]
+\centering
+\maybeincludegraphics[width=0.82\textwidth]{figure/measure_weighted_sampling_flowchart_en.png}
+\caption{Measure-weighted batch sampling workflow. The NN--PR/TYPR distance
+acts as a transfer gate between D-optimal sampling and random exploration.}
+\label{fig:measure-weighted-flowchart}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\subfloat[Final gain by dimension]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/measure_weighted_grand_gain_by_p.png}}
+\hfill
+\subfloat[Learning gain over rounds]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/measure_weighted_grand_learning_gain.png}}
+\caption{Measure-weighted sampling performance relative to random sampling.}
+\label{fig:measure-weighted-gain}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\subfloat[Gain by case and dimension]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/measure_weighted_grand_case_gain_heatmap.png}}
+\hfill
+\subfloat[Learned D-optimal fraction]{%
+  \maybeincludegraphics[width=0.48\textwidth]{figure/measure_weighted_grand_weight_heatmap.png}}
+\caption{Case-level gain and learned D-optimal sampling weights in the
+measure-weighted benchmark.}
+\label{fig:measure-weighted-heatmaps}
+\end{figure}
+
+\FloatBarrier
+
+This final experiment is the most practical test of the proposed distance. The
+measure is not used merely to explain model similarity; it directly controls
+the mixture between an exploitation-oriented D-optimal design and random
+exploration. The intended interpretation is therefore conservative: the
+distance is a transfer gate indicating when polynomial-model-based design
+technology should be used aggressively and when it should be used cautiously.
+
+\subsection{Summary of Experimental Evidence}
+
+Taken together, the experiments support the following chain of evidence. First,
+Procrustes shape distance gives an observable way to compare NN and polynomial
+response surfaces. Second, in the low-dimensional experiments, smaller
+NN--FPR shape distance is associated with smaller predictive-performance gap.
+Third, in pilot and high-dimensional D-optimal experiments, this distance can
+be used to diagnose whether FullPR-based D-optimal sampling is likely to help
+distill the NN oracle. Finally, the measure-weighted experiment demonstrates a
+direct policy use: NN--PR/TYPR distance can determine the fraction of
+D-optimal points in each batch, balancing classical design structure with
+random exploration.
+
+\bibliographystyle{apacite}
+\bibliography{sn-bibliography}
+
+% common bib file
+%% if required, the content of .bbl file can be included here once bbl is generated
+%%\input sn-article.bbl
+
+\end{document}

@@ -1,0 +1,41 @@
+p_dim,case,case_label,strategy,strategy_label,final_mse_mean,gain_vs_random_mean,positive_gain_rate,runs
+20,highdim_highfreq,High-frequency,latin,Latin hypercube,0.00902579448800151,2.7877833656927513,0.5,10
+20,highdim_highfreq,High-frequency,random,Random,0.00938596585506098,0.0,0.0,10
+20,highdim_highfreq,High-frequency,dopt,D-optimal,0.00999102890409736,-7.063236798559311,0.4,10
+20,highdim_highfreq,High-frequency,measure_weighted,Measure-weighted,0.01010550733750893,-9.524419509462145,0.4,10
+20,highdim_local,Local interior,measure_weighted,Measure-weighted,0.0038933099126417002,5.82418211800199,0.8,10
+20,highdim_local,Local interior,latin,Latin hypercube,0.0040225141931634,3.1217871850850227,0.7,10
+20,highdim_local,Local interior,dopt,D-optimal,0.00407122837112919,1.7943663882127088,0.7,10
+20,highdim_local,Local interior,random,Random,0.00417183846048813,0.0,0.0,10
+20,highdim_poly2,Quadratic,dopt,D-optimal,0.00692211718156994,9.453777520322136,1.0,10
+20,highdim_poly2,Quadratic,latin,Latin hypercube,0.0070186953390521,8.3852972029312,1.0,10
+20,highdim_poly2,Quadratic,measure_weighted,Measure-weighted,0.0070364064950086905,8.240556640342936,0.9,10
+20,highdim_poly2,Quadratic,random,Random,0.00769013213404969,0.0,0.0,10
+20,highdim_smooth,Smooth,dopt,D-optimal,0.00218490698517292,11.384466584117172,1.0,10
+20,highdim_smooth,Smooth,measure_weighted,Measure-weighted,0.00224364195213161,8.964330237909945,0.9,10
+20,highdim_smooth,Smooth,latin,Latin hypercube,0.00230508615062856,6.777334838323155,0.9,10
+20,highdim_smooth,Smooth,random,Random,0.00247136392405584,0.0,0.0,10
+20,highdim_strong,Strong nonlinear,latin,Latin hypercube,0.00168280689196697,7.88396580197094,0.7,10
+20,highdim_strong,Strong nonlinear,measure_weighted,Measure-weighted,0.00168542460056677,8.4823871754343,0.6,10
+20,highdim_strong,Strong nonlinear,dopt,D-optimal,0.00176306862544673,4.981856215965936,0.7,10
+20,highdim_strong,Strong nonlinear,random,Random,0.00184553159640819,0.0,0.0,10
+50,highdim_highfreq,High-frequency,latin,Latin hypercube,0.02097378581314581,4.8590813104808435,0.5,10
+50,highdim_highfreq,High-frequency,measure_weighted,Measure-weighted,0.02257892623716189,0.23814002532051526,0.6,10
+50,highdim_highfreq,High-frequency,random,Random,0.02312148688268703,0.0,0.0,10
+50,highdim_highfreq,High-frequency,dopt,D-optimal,0.02713517397783703,-19.34766944403271,0.2,10
+50,highdim_local,Local interior,measure_weighted,Measure-weighted,0.00804183491057834,13.551630708503442,0.8,10
+50,highdim_local,Local interior,dopt,D-optimal,0.00815522875928516,12.279781313510073,0.8,10
+50,highdim_local,Local interior,random,Random,0.00932879794378862,0.0,0.0,10
+50,highdim_local,Local interior,latin,Latin hypercube,0.009770811740074839,-5.791812671410661,0.4,10
+50,highdim_poly2,Quadratic,random,Random,0.045779026440766,0.0,0.0,10
+50,highdim_poly2,Quadratic,latin,Latin hypercube,0.04656672778773047,-2.259066253402591,0.4,10
+50,highdim_poly2,Quadratic,dopt,D-optimal,0.04689651089284793,-2.975083059537671,0.4,10
+50,highdim_poly2,Quadratic,measure_weighted,Measure-weighted,0.04915692089467779,-8.046015922332323,0.3,10
+50,highdim_smooth,Smooth,latin,Latin hypercube,0.01072863570391959,-0.5793111171710814,0.4,10
+50,highdim_smooth,Smooth,random,Random,0.01072988213034766,0.0,0.0,10
+50,highdim_smooth,Smooth,dopt,D-optimal,0.010860648376231009,-2.0483755763117015,0.4,10
+50,highdim_smooth,Smooth,measure_weighted,Measure-weighted,0.01086139994471806,-2.908353904592495,0.3,10
+50,highdim_strong,Strong nonlinear,latin,Latin hypercube,0.00483201210735297,4.613323179530973,0.6,10
+50,highdim_strong,Strong nonlinear,dopt,D-optimal,0.0049223485675851195,2.859571543267837,0.6,10
+50,highdim_strong,Strong nonlinear,measure_weighted,Measure-weighted,0.00507628171942175,-0.3310916999092198,0.7,10
+50,highdim_strong,Strong nonlinear,random,Random,0.00508153337159061,0.0,0.0,10

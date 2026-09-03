@@ -9,17 +9,25 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
+from report_export import export_docx_to_pdf
+
 
 ROOT = Path(__file__).resolve().parent
-SUMMARY = ROOT / "paper_highdim_iter_dopt_final_summary.csv"
-FIG_FINAL = ROOT / "paper_highdim_iter_dopt_final_gain_ci.png"
-FIG_CPU_GAIN = ROOT / "paper_highdim_iter_dopt_cpu_gain_mean_ci.png"
-FIG_CUDA_GAIN = ROOT / "paper_highdim_iter_dopt_cuda_gain_mean_ci.png"
-FIG_CPU_MSE = ROOT / "paper_highdim_iter_dopt_cpu_mse_mean_ci.png"
-FIG_CUDA_MSE = ROOT / "paper_highdim_iter_dopt_cuda_mse_mean_ci.png"
+DATA_DIR = ROOT / "data" / "highdim_iter"
+FIG_DIR = ROOT / "figures" / "highdim_iter"
+REPORT_EN_DIR = ROOT / "reports" / "en"
+REPORT_ZH_DIR = ROOT / "reports" / "zh"
+
+SUMMARY = DATA_DIR / "paper_highdim_iter_dopt_final_summary.csv"
+FIG_FINAL = FIG_DIR / "paper_highdim_iter_dopt_final_gain_ci.png"
+FIG_CPU_GAIN = FIG_DIR / "paper_highdim_iter_dopt_cpu_gain_mean_ci.png"
+FIG_CUDA_GAIN = FIG_DIR / "paper_highdim_iter_dopt_cuda_gain_mean_ci.png"
+FIG_CPU_MSE = FIG_DIR / "paper_highdim_iter_dopt_cpu_mse_mean_ci.png"
+FIG_CUDA_MSE = FIG_DIR / "paper_highdim_iter_dopt_cuda_mse_mean_ci.png"
 
 OUT_CN = ROOT / "大报告_中文_完整版_论文级高维迭代更新版.docx"
-OUT_EN = ROOT / "big_report_en_complete_paper_highdim_update.docx"
+OUT_EN = REPORT_EN_DIR / "03_Technical_Supplement_Highdim_Doptimal.docx"
+OUT_CN = REPORT_ZH_DIR / "大报告_中文_完整版_论文级高维迭代更新版.docx"
 
 
 BLUE = RGBColor(0x2E, 0x74, 0xB5)
@@ -272,18 +280,61 @@ def final_rows(df, device):
     return rows
 
 
+def report_metadata(df):
+    final = df.copy()
+    p_values = sorted(final["p"].unique())
+    cases = sorted(str(x).replace("highdim_", "") for x in final["case"].unique())
+    devices = sorted(final["device"].astype(str).unique())
+    fractions = sorted(final["initial_fraction"].unique())
+    reps_total = int(final["mse_gain_vs_random_median_pct_count"].sum())
+    positive_total = int(round(
+        (final["positive_rate"] * final["mse_gain_vs_random_median_pct_count"]).sum()
+    ))
+    mean_gain = float(
+        (
+            final["mse_gain_vs_random_median_pct_mean"]
+            * final["mse_gain_vs_random_median_pct_count"]
+        ).sum()
+        / max(1, reps_total)
+    )
+    n_fractions = max(1, len(fractions))
+    n_oracles = reps_total // n_fractions
+    iterations = int(final["iteration"].max()) if "iteration" in final else 0
+    random_repeats = 10
+    return {
+        "p_desc": ", ".join(str(int(x)) for x in p_values),
+        "case_desc": ", ".join(cases),
+        "device_desc": ", ".join(devices).upper(),
+        "fractions_desc": ", ".join(f"{x:g}" for x in fractions),
+        "reps_total": reps_total,
+        "positive_total": positive_total,
+        "positive_rate": 100.0 * positive_total / max(1, reps_total),
+        "mean_gain": mean_gain,
+        "n_original": int(final["n_original"].iloc[0]),
+        "n_train": int(final["n_train_pool"].iloc[0]),
+        "n_eval": int(final["n_eval"].iloc[0]),
+        "iterations": iterations,
+        "batch_size": int(final["batch_size"].iloc[0]),
+        "random_repeats": random_repeats,
+        "n_oracles": n_oracles,
+        "n_paths": reps_total,
+        "n_random_fits": reps_total * (iterations + 1) * random_repeats,
+    }
+
+
 def build_chinese(df):
+    meta = report_metadata(df)
     doc = Document()
     style_doc(doc, "cn")
     add_title(
         doc,
         "NN-FullPR 迁移中的高维迭代 D-optimal 实验报告",
-        "基于 10000 样本、p=20/50、CPU/GPU、多 seed 的论文级实验更新版",
+        f"基于 {meta['n_original']} 样本、p={meta['p_desc']}、CPU/GPU、多 seed 的论文级实验更新版",
         [
-            ("数据规模", "原始 n=10000；训练池/评估集=7500/2500"),
-            ("维度与场景", "p=20,50；quadratic / smooth / strong nonlinear"),
+            ("数据规模", f"原始 n={meta['n_original']}；训练池/评估集={meta['n_train']}/{meta['n_eval']}"),
+            ("维度与场景", f"p={meta['p_desc']}；{meta['case_desc']}"),
             ("重复设计", "3 个 data seed × 2 个 NN 初始化 seed × 2 个初始采样比例 × CPU/GPU"),
-            ("计算量", "72 次 NN oracle 训练；144 条迭代轨迹；8640 次随机 surrogate 拟合"),
+            ("计算量", f"{meta['n_oracles']} 次 NN oracle 训练；{meta['n_paths']} 条迭代轨迹；{meta['n_random_fits']} 次随机 surrogate 拟合"),
         ],
     )
 
@@ -291,7 +342,7 @@ def build_chinese(df):
     add_lead_callout(
         doc,
         "核心结论：",
-        "在最后一轮 144 个重复中，D-optimal 升级有 128 个重复优于同预算随机升级中位数，正收益比例为 88.9%，平均 MSE gain 为 2.61%。这说明迭代式 D-optimal 可以作为高维 NN-to-FullPR surrogate 构建中的稳定数据升级策略，但收益大小依赖特征空间、初始采样比例和非线性强度。",
+        f"在最后一轮 {meta['reps_total']} 个重复中，D-optimal 升级有 {meta['positive_total']} 个重复优于同预算随机升级中位数，正收益比例为 {meta['positive_rate']:.1f}%，平均 MSE gain 为 {meta['mean_gain']:.2f}%。这说明迭代式 D-optimal 可以作为高维 NN-to-FullPR surrogate 构建中的稳定数据升级策略，但收益大小依赖特征空间、初始采样比例和非线性强度。",
     )
 
     doc.add_heading("实验流程", level=1)
@@ -308,13 +359,13 @@ def build_chinese(df):
         doc,
         ["项目", "设置"],
         [
-            ["原始数据集大小", "10000"],
-            ["输入维度", "20, 50"],
-            ["数据场景", "quadratic, smooth, strong nonlinear"],
-            ["初始 uniform 比例", "0.05, 0.1"],
-            ["迭代轮数", "5；每轮增加 500 个样本"],
-            ["随机基准", "每个迭代点重复 10 次"],
-            ["设备", "CPU 与 NVIDIA GeForce RTX 4070 Ti SUPER"],
+            ["原始数据集大小", str(meta["n_original"])],
+            ["输入维度", meta["p_desc"]],
+            ["数据场景", meta["case_desc"]],
+            ["初始 uniform 比例", meta["fractions_desc"]],
+            ["迭代轮数", f"{meta['iterations']}；每轮增加 {meta['batch_size']} 个样本"],
+            ["随机基准", f"每个迭代点重复 {meta['random_repeats']} 次"],
+            ["设备", meta["device_desc"]],
             ["FullPR 特征", "degree=2, include_special=True"],
         ],
         [2200, 7160],
@@ -346,8 +397,8 @@ def build_chinese(df):
 
     doc.add_heading("讨论", level=1)
     add_bullets(doc, [
-        "p=20 时二阶 FullPR 特征数较少，初始样本通常已超过特征数，因此 D-optimal 的收益较温和，但正收益比例高。",
-        "p=50 时初始设计集更容易低于 FullPR 特征数，早期迭代出现更大波动；当升级数据集继续进入下一轮 D-optimal 后，误差逐步稳定。",
+        "低维或特征数较少时，初始样本更容易超过二阶 FullPR 特征数，因此 D-optimal 的收益常表现为小幅但稳定的改进。",
+        "高维或特征数超过初始设计集时，早期迭代更容易欠定和波动；当升级数据集继续进入下一轮 D-optimal 后，需要观察误差是否逐步稳定。",
         "strong nonlinear 场景的置信区间明显更宽，说明当 NN oracle 的局部行为超出二阶 FullPR 表达能力时，D-optimal 仍能改善覆盖，但不能被解释为充分逼近 NN 的保证。",
         "CPU/GPU 的总体结论一致，说明结果不是单一设备偶然现象。",
     ])
@@ -362,17 +413,18 @@ def build_chinese(df):
 
 
 def build_english(df):
+    meta = report_metadata(df)
     doc = Document()
     style_doc(doc, "en")
     add_title(
         doc,
         "High-Dimensional Iterative D-optimal Experiment for NN-FullPR Transfer",
-        "Paper-scale bilingual report update with n=10000, p=20/50, CPU/GPU, and multi-seed replication",
+        f"Paper-scale bilingual report update with n={meta['n_original']}, p={meta['p_desc']}, CPU/GPU, and multi-seed replication",
         [
-            ("Dataset scale", "Original n=10000; training/evaluation split=7500/2500"),
-            ("Dimensions and cases", "p=20,50; quadratic / smooth / strong nonlinear"),
+            ("Dataset scale", f"Original n={meta['n_original']}; training/evaluation split={meta['n_train']}/{meta['n_eval']}"),
+            ("Dimensions and cases", f"p={meta['p_desc']}; {meta['case_desc']}"),
             ("Replication", "3 data seeds × 2 NN initialization seeds × 2 initial fractions × CPU/GPU"),
-            ("Workload", "72 NN oracle trainings; 144 iterative paths; 8640 random surrogate fits"),
+            ("Workload", f"{meta['n_oracles']} NN oracle trainings; {meta['n_paths']} iterative paths; {meta['n_random_fits']} random surrogate fits"),
         ],
     )
 
@@ -380,7 +432,7 @@ def build_english(df):
     add_lead_callout(
         doc,
         "Main finding:",
-        "At the final iteration, D-optimal upgrading outperformed the same-budget random-upgrade median in 128 of 144 replications. The final positive-rate was 88.9%, and the average MSE gain was 2.61%. The result supports iterative D-optimal design as a stable data-upgrading strategy for high-dimensional NN-to-FullPR surrogate construction, while also showing that the gain depends on feature expressiveness, initial sampling fraction, and nonlinearity strength.",
+        f"At the final iteration, D-optimal upgrading outperformed the same-budget random-upgrade median in {meta['positive_total']} of {meta['reps_total']} replications. The final positive-rate was {meta['positive_rate']:.1f}%, and the average MSE gain was {meta['mean_gain']:.2f}%. The result supports iterative D-optimal design as a stable data-upgrading strategy for high-dimensional NN-to-FullPR surrogate construction, while also showing that the gain depends on feature expressiveness, initial sampling fraction, and nonlinearity strength.",
     )
 
     doc.add_heading("Experimental Workflow", level=1)
@@ -397,13 +449,13 @@ def build_english(df):
         doc,
         ["Item", "Setting"],
         [
-            ["Original dataset size", "10000"],
-            ["Input dimensions", "20, 50"],
-            ["Synthetic cases", "quadratic, smooth, strong nonlinear"],
-            ["Initial uniform fractions", "0.05, 0.1"],
-            ["Iterations", "5; 500 samples added per iteration"],
-            ["Random baseline", "10 repeats per iteration point"],
-            ["Devices", "CPU and NVIDIA GeForce RTX 4070 Ti SUPER"],
+            ["Original dataset size", str(meta["n_original"])],
+            ["Input dimensions", meta["p_desc"]],
+            ["Synthetic cases", meta["case_desc"]],
+            ["Initial uniform fractions", meta["fractions_desc"]],
+            ["Iterations", f"{meta['iterations']}; {meta['batch_size']} samples added per iteration"],
+            ["Random baseline", f"{meta['random_repeats']} repeats per iteration point"],
+            ["Devices", meta["device_desc"]],
             ["FullPR features", "degree=2, include_special=True"],
         ],
         [2200, 7160],
@@ -435,8 +487,8 @@ def build_english(df):
 
     doc.add_heading("Discussion", level=1)
     add_bullets(doc, [
-        "For p=20, the quadratic FullPR feature count is relatively small, so the initial design often already exceeds the number of features. D-optimal gains are therefore modest but stable.",
-        "For p=50, the initial design is more likely to be under the FullPR feature count. Early iterations are more volatile, but the upgraded design stabilizes as it is reused in later D-optimal steps.",
+        "When the quadratic FullPR feature count is relatively small, the initial design often already exceeds the number of features, so D-optimal gains tend to be modest but stable.",
+        "When the feature count exceeds the initial design size, early iterations can be more volatile; the key diagnostic is whether the upgraded design stabilizes as it is reused in later D-optimal steps.",
         "The strong nonlinear case has wider confidence intervals, which marks the boundary of the method: D-optimal selection can improve coverage, but it is not a guarantee that a low-degree FullPR surrogate fully captures the NN oracle.",
         "CPU and GPU runs lead to the same qualitative conclusion, reducing the chance that the result is a device-specific artifact.",
     ])
@@ -451,11 +503,17 @@ def build_english(df):
 
 
 def main():
+    REPORT_EN_DIR.mkdir(parents=True, exist_ok=True)
+    REPORT_ZH_DIR.mkdir(parents=True, exist_ok=True)
     df = pd.read_csv(SUMMARY)
     build_chinese(df)
     build_english(df)
+    out_cn_pdf = export_docx_to_pdf(OUT_CN)
+    out_en_pdf = export_docx_to_pdf(OUT_EN)
     print(OUT_CN)
     print(OUT_EN)
+    print(out_cn_pdf)
+    print(out_en_pdf)
 
 
 if __name__ == "__main__":
