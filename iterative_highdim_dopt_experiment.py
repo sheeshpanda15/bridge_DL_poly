@@ -3,7 +3,7 @@ High-dimensional iterative D-optimal transfer experiment.
 
 This script is the paper-scale version of the pilot-D-optimal idea:
 
-1. Generate an original dataset with n=10000 and p in {10, 20, 50, 100, 200}.
+1. Generate an original dataset with n=10000 and p in {5, 10, 20, 50, 75, 100}.
 2. Train a full NN oracle on the original training split.
 3. Start from a small uniform pilot/design set.
 4. Fit a FullPR surrogate to the NN oracle on the current design set.
@@ -50,7 +50,7 @@ CASE_LABELS = {
     "highdim_strong": "Strong nonlinear",
 }
 
-DEFAULT_P_VALUES = [10, 20, 50, 100, 200]
+DEFAULT_P_VALUES = [5, 10, 20, 50, 75, 100]
 
 
 def get_device(name):
@@ -405,33 +405,35 @@ def run_one(case, p, args, device, rng):
     return rows
 
 
+def _slug(value):
+    return str(value).replace(".", "p").replace("-", "m").replace(",", "_")
+
+
 def plot_results(df, out_prefix):
     for metric, ylabel, suffix in [
         ("dopt_mse_vs_nn", "MSE vs NN oracle", "mse_curve"),
         ("mse_gain_vs_random_median_pct", "Gain vs random median MSE (%)", "gain_curve"),
     ]:
-        fig, axes = plt.subplots(1, len(sorted(df["p"].unique())),
-                                 figsize=(6.2 * len(sorted(df["p"].unique())), 4.8),
-                                 squeeze=False)
-        for ax, p in zip(axes[0], sorted(df["p"].unique())):
+        for p in sorted(df["p"].unique()):
             subp = df[df["p"] == p]
             for case, sub in subp.groupby("case"):
                 sub = sub.sort_values("iteration")
+                fig, ax = plt.subplots(figsize=(6.2, 4.8))
                 label = CASE_LABELS.get(case, case)
-                ax.plot(sub["selected_n"], sub[metric], marker="o", label=label)
+                ax.plot(sub["selected_n"], sub[metric], marker="o", label="D-optimal")
                 if metric == "dopt_mse_vs_nn":
                     ax.plot(sub["selected_n"], sub["random_mse_median"],
-                            linestyle="--", alpha=0.7, label=f"{label} random")
-            if metric.endswith("pct"):
-                ax.axhline(0, color="#555555", linewidth=1)
-            ax.set_title(f"p={p}")
-            ax.set_xlabel("Selected training points")
-            ax.set_ylabel(ylabel)
-            ax.grid(True, linestyle=":", alpha=0.65)
-            ax.legend(frameon=False, fontsize=8)
-        fig.tight_layout()
-        fig.savefig(f"{out_prefix}_{suffix}.png", dpi=200)
-        plt.close(fig)
+                            linestyle="--", alpha=0.7, label="Random median")
+                if metric.endswith("pct"):
+                    ax.axhline(0, color="#555555", linewidth=1)
+                ax.set_title(f"{label} / p={p}")
+                ax.set_xlabel("Selected training points")
+                ax.set_ylabel(ylabel)
+                ax.grid(True, linestyle=":", alpha=0.65)
+                ax.legend(frameon=False, fontsize=8)
+                fig.tight_layout()
+                fig.savefig(f"{out_prefix}_{_slug(case)}_p{int(p)}_{suffix}.png", dpi=200)
+                plt.close(fig)
 
 
 def write_report(df, out_prefix):
@@ -495,8 +497,8 @@ def write_report(df, out_prefix):
         "",
         f"- `{out_prefix}_results.csv`：逐轮完整结果。",
         f"- `{out_prefix}_summary.csv`：最后一轮汇总。",
-        f"- `{out_prefix}_mse_curve.png`：迭代误差曲线。",
-        f"- `{out_prefix}_gain_curve.png`：相对随机基准收益曲线。",
+        f"- `{out_prefix}_<case>_p<p>_mse_curve.png`：每个 case 和 p 单独保存的迭代误差曲线。",
+        f"- `{out_prefix}_<case>_p<p>_gain_curve.png`：每个 case 和 p 单独保存的相对随机基准收益曲线。",
     ])
     Path(f"{out_prefix}_report.md").write_text("\n".join(lines), encoding="utf-8")
 
@@ -521,8 +523,8 @@ def run(args):
     print(df.to_string(index=False))
     print(f"Saved {args.out_prefix}_results.csv")
     print(f"Saved {args.out_prefix}_summary.csv")
-    print(f"Saved {args.out_prefix}_mse_curve.png")
-    print(f"Saved {args.out_prefix}_gain_curve.png")
+    print(f"Saved separate {args.out_prefix}_<case>_p<p>_mse_curve.png files")
+    print(f"Saved separate {args.out_prefix}_<case>_p<p>_gain_curve.png files")
     print(f"Saved {args.out_prefix}_report.md")
 
 

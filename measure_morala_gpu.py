@@ -1,7 +1,7 @@
 """
 measure_morala_gpu.py
 ─────────────────────────────────────────────────────────────────
-大规模 GPU 版本：n = 10000 样本、p = 10/20/50/100/200 五组输入维度的模拟。
+大规模 GPU 版本：n = 10000 样本、p = 5/10/20/50/75/100 六组输入维度的模拟。
 
 与 measure_morala.py（小规模 CPU 版）的关键差异：
   1. 神经网络训练在 GPU 上进行（此规模 GPU 才真正有意义：
@@ -16,7 +16,7 @@ measure_morala_gpu.py
 用法（Windows）：
   python measure_morala_gpu.py                     # 默认实验组
   python measure_morala_gpu.py --device cuda       # 强制 GPU
-  python measure_morala_gpu.py --n 10000 --p-values 10 20 50 100 200 --epochs 300
+  python measure_morala_gpu.py --n 10000 --p-values 5 10 20 50 75 100 --epochs 300
   python measure_morala_gpu.py --n 10000 --p 20 --epochs 300  # 单组 p 调试
   python measure_morala_gpu.py --repeats 20 --out-prefix gpu_results
 
@@ -55,7 +55,7 @@ except ImportError:
 #   超过 4 阶特征数过大、内存与拟合都吃不消，故封顶 3（max_order=min(隐层数, 3)）。
 SAFE_MAX_ORDER = 3
 FULLPR_FEATURE_CAP = 30_000
-DEFAULT_P_VALUES = [10, 20, 50, 100, 200]
+DEFAULT_P_VALUES = [5, 10, 20, 50, 75, 100]
 
 
 # ─────────────────────────────────────────────
@@ -656,49 +656,63 @@ def run_grid(device, n=10000, p=20, epochs=300, batch_size=512,
     return df, corr_df
 
 
+def _slug(value):
+    return str(value).replace(".", "p").replace("-", "m").replace(",", "_")
+
+
 def _plots(df, corr_pairs, out_prefix):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    p_label = ",".join(str(x) for x in sorted(df["p"].unique()))
     acts = ["softplus", "tanh", "sigmoid"]
     colors = {"softplus": "#2a9d8f", "tanh": "#e76f51", "sigmoid": "#264653"}
     compare_models = [("FPR", "FullPR"), ("TPR", "Taylor-PR"), ("LTPR", "LayerTaylor-PR")]
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    for ax, col, title in [(axes[0], "act_io_sum", "activation change u->g(u) (sum)"),
-                           (axes[1], "shape_NN_FPR_in", "NN-FullPR shape (in)")]:
-        data = [df[df.activation == a][col].dropna().values for a in acts]
-        bp = ax.boxplot(data, labels=acts, patch_artist=True)
-        for patch, a in zip(bp["boxes"], acts):
-            patch.set_facecolor(colors[a]); patch.set_alpha(0.6)
-        ax.set_title(title); ax.set_ylabel(col); ax.grid(alpha=0.3)
-    fig.suptitle(f"High-dim (n=10000,p={p_label}) metrics by activation")
-    fig.tight_layout(); fig.savefig(f"{out_prefix}_boxplot.png", dpi=130); plt.close(fig)
+    for case in sorted(df["case"].unique()):
+        case_df = df[df["case"] == case]
+        p_label = ",".join(str(x) for x in sorted(case_df["p"].unique()))
+        case_tag = _slug(case)
 
-    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
-    for ax, (x, y, label) in zip(axes.ravel(), corr_pairs):
-        for a in acts:
-            sub = df[df.activation == a][[x, y]].dropna()
-            ax.scatter(sub[x], sub[y], s=16, alpha=0.5, color=colors[a], label=a)
-        ax.set_xlabel(x); ax.set_ylabel(y); ax.set_title(label, fontsize=10)
-        ax.grid(alpha=0.3); ax.legend(fontsize=8)
-    fig.suptitle("Geometric distance vs closeness/performance (high-dim)")
-    fig.tight_layout(); fig.savefig(f"{out_prefix}_scatter.png", dpi=130); plt.close(fig)
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        for ax, col, title in [(axes[0], "act_io_sum", "activation change u->g(u) (sum)"),
+                               (axes[1], "shape_NN_FPR_in", "NN-FullPR shape (in)")]:
+            data = [case_df[case_df.activation == a][col].dropna().values for a in acts]
+            bp = ax.boxplot(data, labels=acts, patch_artist=True)
+            for patch, a in zip(bp["boxes"], acts):
+                patch.set_facecolor(colors[a]); patch.set_alpha(0.6)
+            ax.set_title(title); ax.set_ylabel(col); ax.grid(alpha=0.3)
+        fig.suptitle(f"High-dim {case} (n=10000,p={p_label}) metrics by activation")
+        fig.tight_layout()
+        fig.savefig(f"{out_prefix}_{case_tag}_boxplot.png", dpi=130)
+        plt.close(fig)
 
-    rows = []
-    for short, name in compare_models:
-        pct_col = f"{short}_improve_vs_NN_pct"
-        win_col = f"{short}_better_than_NN"
-        if pct_col not in df.columns or win_col not in df.columns:
-            continue
-        for act in acts:
-            sub = df[df.activation == act][[pct_col, win_col]].dropna()
-            if len(sub) == 0:
+        fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+        for ax, (x, y, label) in zip(axes.ravel(), corr_pairs):
+            for a in acts:
+                sub = case_df[case_df.activation == a][[x, y]].dropna()
+                ax.scatter(sub[x], sub[y], s=16, alpha=0.5,
+                           color=colors[a], label=a)
+            ax.set_xlabel(x); ax.set_ylabel(y); ax.set_title(label, fontsize=10)
+            ax.grid(alpha=0.3); ax.legend(fontsize=8)
+        fig.suptitle(f"Geometric distance vs closeness/performance ({case})")
+        fig.tight_layout()
+        fig.savefig(f"{out_prefix}_{case_tag}_scatter.png", dpi=130)
+        plt.close(fig)
+
+        rows = []
+        for short, name in compare_models:
+            pct_col = f"{short}_improve_vs_NN_pct"
+            win_col = f"{short}_better_than_NN"
+            if pct_col not in case_df.columns or win_col not in case_df.columns:
                 continue
-            rows.append((name, act, float(sub[win_col].mean() * 100.0),
-                         float(sub[pct_col].median())))
-    if rows:
+            for act in acts:
+                sub = case_df[case_df.activation == act][[pct_col, win_col]].dropna()
+                if len(sub) == 0:
+                    continue
+                rows.append((name, act, float(sub[win_col].mean() * 100.0),
+                             float(sub[pct_col].median())))
+        if not rows:
+            continue
         models = list(dict.fromkeys(r[0] for r in rows))
         x = np.arange(len(models))
         width = 0.24
@@ -725,15 +739,16 @@ def _plots(df, corr_pairs, out_prefix):
             ax.set_xticklabels(models, rotation=15, ha="right")
             ax.grid(axis="y", alpha=0.3)
             ax.legend(fontsize=8)
-        fig.suptitle("High-dim models vs NN baseline", fontsize=13)
-        fig.tight_layout(); fig.savefig(f"{out_prefix}_nn_baseline.png", dpi=130)
+        fig.suptitle(f"High-dim models vs NN baseline ({case})", fontsize=13)
+        fig.tight_layout()
+        fig.savefig(f"{out_prefix}_{case_tag}_nn_baseline.png", dpi=130)
         plt.close(fig)
 
 
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(
-        description="高维 GPU 版 Morala 实验 (n=10000, p=10/20/50/100/200)")
+        description="高维 GPU 版 Morala 实验 (n=10000, p=5/10/20/50/75/100)")
     ap.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     ap.add_argument("--n", type=int, default=10000)
     ap.add_argument("--p", type=int, default=None,

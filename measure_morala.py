@@ -22,7 +22,7 @@ modelling via polynomial regression" 风格的模拟实验，并保留
   - NN 训练过程中逐 epoch 的 线性层 vs 激活层 几何距离
   - 最后一个采集 epoch 的逐样本成对马氏距离
 
-激活函数接口：--activation {softplus, tanh, sigmoid, relu}
+激活函数接口：--activation {softplus, tanh, sigmoid, relu, identity}
 （relu 在 0 点不可导，Taylor-PR 会被自动跳过并提示）
 
 用法示例：
@@ -72,6 +72,8 @@ ACTIVATIONS = {
     "tanh":     nn.Tanh,
     "sigmoid":  nn.Sigmoid,
     "relu":     nn.ReLU,     # 仅供 NN 使用；Taylor-PR 不支持（0 点不可导）
+    "identity": nn.Identity,  # 线性/恒等激活，用作 NN 表达能力对照
+    "identical": nn.Identity, # 常见误写别名，等价于 identity
 }
 
 ACTIVATION_HOOK_TYPES = (nn.ReLU, nn.Sigmoid, nn.Tanh, nn.Softplus, nn.Identity)
@@ -82,6 +84,8 @@ def activation_derivs_at_zero(act_name: str, q: int):
     用自动微分精确计算 g^(n)(0)，n = 0..q。
     对应论文 2.2 节中各激活函数在 0 点的泰勒系数来源。
     """
+    if act_name in {"identity", "identical"}:
+        return [0.0, 1.0] + [0.0] * max(0, q - 1)
     if act_name == "relu":
         raise ValueError("ReLU 在 0 点不可导，无法做泰勒展开（参见论文结论：需分段多项式近似）。")
     act = ACTIVATIONS[act_name]()

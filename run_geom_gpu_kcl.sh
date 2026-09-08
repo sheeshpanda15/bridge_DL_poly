@@ -3,7 +3,7 @@
 #SBATCH --job-name=GPU_Bridge_Geom
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
-#SBATCH --array=0-4
+#SBATCH --array=0-5
 #SBATCH --time=48:00:00
 #SBATCH --mem=100G
 #SBATCH --mail-type=END,FAIL
@@ -46,7 +46,7 @@ echo ""
 
 python -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)"
 
-P_VALUES=(10 20 50 100 200)
+P_VALUES=(5 10 20 50 75 100)
 P=${P_VALUES[$SLURM_ARRAY_TASK_ID]}
 
 echo "========== Starting Geometric Equivalence experiment, p=${P} =========="

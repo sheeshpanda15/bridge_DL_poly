@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=geom_gpu
-#SBATCH --array=0-4
+#SBATCH --array=0-5
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
@@ -12,7 +12,7 @@ set -euo pipefail
 
 mkdir -p logs
 
-P_VALUES=(10 20 50 100 200)
+P_VALUES=(5 10 20 50 75 100)
 P=${P_VALUES[$SLURM_ARRAY_TASK_ID]}
 
 python -u measure_morala_gpu.py \

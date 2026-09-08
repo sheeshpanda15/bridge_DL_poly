@@ -41,6 +41,10 @@ from iterative_highdim_dopt_experiment import (
 CASE_ORDER = ["highdim_poly2", "highdim_smooth", "highdim_strong"]
 
 
+def _slug(value):
+    return str(value).replace(".", "p").replace("-", "m").replace(",", "_")
+
+
 def stable_seed(base, device_name, case, p, data_seed, init_seed, fraction):
     device_offset = 0 if device_name == "cpu" else 500_000
     case_offset = (CASE_ORDER.index(case) + 1) * 10_000 if case in CASE_ORDER else 90_000
@@ -231,103 +235,103 @@ def aggregate_results(df):
 def plot_mean_curves(agg, out_prefix):
     for device in sorted(agg["device"].unique()):
         part = agg[agg["device"] == device]
-        fig, axes = plt.subplots(
-            len(sorted(part["p"].unique())),
-            len(sorted(part["initial_fraction"].unique())),
-            figsize=(13.5, 8.2),
-            squeeze=False,
-            sharex=False,
-        )
-        for i, p in enumerate(sorted(part["p"].unique())):
-            for j, frac in enumerate(sorted(part["initial_fraction"].unique())):
-                ax = axes[i, j]
-                sub = part[(part["p"] == p) & (part["initial_fraction"] == frac)]
+        for p in sorted(part["p"].unique()):
+            for frac in sorted(part["initial_fraction"].unique()):
                 for case in CASE_ORDER:
-                    line = sub[sub["case"] == case].sort_values("selected_n")
+                    line = part[
+                        (part["p"] == p)
+                        & (part["initial_fraction"] == frac)
+                        & (part["case"] == case)
+                    ].sort_values("selected_n")
                     if line.empty:
                         continue
+                    fig, ax = plt.subplots(figsize=(6.4, 4.8))
                     x = line["selected_n"].to_numpy(dtype=float)
                     y = line["mse_gain_vs_random_median_pct_mean"].to_numpy(dtype=float)
                     ci = line["mse_gain_vs_random_median_pct_ci95"].to_numpy(dtype=float)
                     label = CASE_LABELS.get(case, case)
-                    ax.plot(x, y, marker="o", label=label)
+                    ax.plot(x, y, marker="o", label="D-optimal gain")
                     ax.fill_between(x, y - ci, y + ci, alpha=0.16)
-                ax.axhline(0, color="#555555", linewidth=1)
-                ax.set_title(f"{device.upper()} / p={p} / init={frac:g}")
-                ax.set_xlabel("Selected training points")
-                ax.set_ylabel("Gain vs random median MSE (%)")
-                ax.grid(True, linestyle=":", alpha=0.65)
-                ax.legend(frameon=False, fontsize=8)
-        fig.tight_layout()
-        fig.savefig(f"{out_prefix}_{device}_gain_mean_ci.png", dpi=220)
-        plt.close(fig)
+                    ax.axhline(0, color="#555555", linewidth=1)
+                    ax.set_title(f"{device.upper()} / {label} / p={p} / init={frac:g}")
+                    ax.set_xlabel("Selected training points")
+                    ax.set_ylabel("Gain vs random median MSE (%)")
+                    ax.grid(True, linestyle=":", alpha=0.65)
+                    ax.legend(frameon=False, fontsize=8)
+                    fig.tight_layout()
+                    fig.savefig(
+                        f"{out_prefix}_{device}_{_slug(case)}_p{int(p)}"
+                        f"_init{_slug(f'{frac:g}')}_gain_mean_ci.png",
+                        dpi=220,
+                    )
+                    plt.close(fig)
 
     for device in sorted(agg["device"].unique()):
         part = agg[agg["device"] == device]
-        fig, axes = plt.subplots(
-            len(sorted(part["p"].unique())),
-            len(sorted(part["initial_fraction"].unique())),
-            figsize=(13.5, 8.2),
-            squeeze=False,
-            sharex=False,
-        )
-        for i, p in enumerate(sorted(part["p"].unique())):
-            for j, frac in enumerate(sorted(part["initial_fraction"].unique())):
-                ax = axes[i, j]
-                sub = part[(part["p"] == p) & (part["initial_fraction"] == frac)]
+        for p in sorted(part["p"].unique()):
+            for frac in sorted(part["initial_fraction"].unique()):
                 for case in CASE_ORDER:
-                    line = sub[sub["case"] == case].sort_values("selected_n")
+                    line = part[
+                        (part["p"] == p)
+                        & (part["initial_fraction"] == frac)
+                        & (part["case"] == case)
+                    ].sort_values("selected_n")
                     if line.empty:
                         continue
+                    fig, ax = plt.subplots(figsize=(6.4, 4.8))
                     x = line["selected_n"].to_numpy(dtype=float)
                     y = line["dopt_mse_vs_nn_mean"].to_numpy(dtype=float)
                     ci = line["dopt_mse_vs_nn_ci95"].to_numpy(dtype=float)
                     yr = line["random_mse_median_mean"].to_numpy(dtype=float)
                     label = CASE_LABELS.get(case, case)
-                    ax.plot(x, y, marker="o", label=label)
+                    ax.plot(x, y, marker="o", label="D-optimal")
                     ax.fill_between(x, y - ci, y + ci, alpha=0.16)
                     ax.plot(x, yr, linestyle="--", alpha=0.7,
-                            label=f"{label} random")
-                ax.set_title(f"{device.upper()} / p={p} / init={frac:g}")
-                ax.set_xlabel("Selected training points")
-                ax.set_ylabel("MSE vs NN oracle")
-                ax.grid(True, linestyle=":", alpha=0.65)
-                ax.legend(frameon=False, fontsize=7)
-        fig.tight_layout()
-        fig.savefig(f"{out_prefix}_{device}_mse_mean_ci.png", dpi=220)
-        plt.close(fig)
+                            label="Random median")
+                    ax.set_title(f"{device.upper()} / {label} / p={p} / init={frac:g}")
+                    ax.set_xlabel("Selected training points")
+                    ax.set_ylabel("MSE vs NN oracle")
+                    ax.grid(True, linestyle=":", alpha=0.65)
+                    ax.legend(frameon=False, fontsize=8)
+                    fig.tight_layout()
+                    fig.savefig(
+                        f"{out_prefix}_{device}_{_slug(case)}_p{int(p)}"
+                        f"_init{_slug(f'{frac:g}')}_mse_mean_ci.png",
+                        dpi=220,
+                    )
+                    plt.close(fig)
 
 
 def plot_final_boxplots(df, out_prefix):
     final_iter = int(df["iteration"].max())
     final = df[df["iteration"] == final_iter].copy()
-    final["label"] = (
-        final["device"].str.upper()
-        + "\np="
-        + final["p"].astype(str)
-        + "\n"
-        + final["case_label"].astype(str)
-        + "\ninit="
-        + final["initial_fraction"].map(lambda x: f"{x:g}")
-    )
-    order = final.sort_values(["device", "p", "case", "initial_fraction"])["label"].unique()
-    data = [
-        final[final["label"] == label]["mse_gain_vs_random_median_pct"].to_numpy()
-        for label in order
-    ]
-    fig, ax = plt.subplots(figsize=(max(14, 0.55 * len(order)), 6.2))
-    bp = ax.boxplot(data, tick_labels=order, patch_artist=True, showfliers=True)
-    for patch in bp["boxes"]:
-        patch.set_facecolor("#80b1d3")
-        patch.set_alpha(0.72)
-    ax.axhline(0, color="#555555", linewidth=1)
-    ax.set_ylabel("Final gain vs random median MSE (%)")
-    ax.set_title("Final-iteration gain distribution across data/init seeds")
-    ax.tick_params(axis="x", labelrotation=75)
-    ax.grid(True, axis="y", linestyle=":", alpha=0.65)
-    fig.tight_layout()
-    fig.savefig(f"{out_prefix}_final_gain_boxplot.png", dpi=220)
-    plt.close(fig)
+    for (device, case, p, frac), sub in final.groupby(
+        ["device", "case", "p", "initial_fraction"]
+    ):
+        data = sub["mse_gain_vs_random_median_pct"].to_numpy(dtype=float)
+        if len(data) == 0:
+            continue
+        fig, ax = plt.subplots(figsize=(4.8, 4.8))
+        bp = ax.boxplot([data], tick_labels=["final"], patch_artist=True, showfliers=True)
+        for patch in bp["boxes"]:
+            patch.set_facecolor("#80b1d3")
+            patch.set_alpha(0.72)
+        jitter = np.linspace(-0.05, 0.05, len(data)) if len(data) > 1 else np.array([0.0])
+        ax.scatter(np.ones(len(data)) + jitter, data, s=22, color="#1f4e79", alpha=0.75)
+        ax.axhline(0, color="#555555", linewidth=1)
+        ax.set_ylabel("Final gain vs random median MSE (%)")
+        ax.set_title(
+            f"{str(device).upper()} / {CASE_LABELS.get(case, case)} / "
+            f"p={int(p)} / init={frac:g}"
+        )
+        ax.grid(True, axis="y", linestyle=":", alpha=0.65)
+        fig.tight_layout()
+        fig.savefig(
+            f"{out_prefix}_{device}_{_slug(case)}_p{int(p)}"
+            f"_init{_slug(f'{frac:g}')}_final_gain_boxplot.png",
+            dpi=220,
+        )
+        plt.close(fig)
 
 
 def write_report(df, agg, args, counts, out_prefix):
@@ -420,9 +424,9 @@ def write_report(df, agg, args, counts, out_prefix):
         f"- `{out_prefix}_raw.csv`：所有重复与迭代点的原始结果。",
         f"- `{out_prefix}_aggregate.csv`：均值、标准差、SEM、95% CI 和正收益比例。",
         f"- `{out_prefix}_final_summary.csv`：最后一轮分组汇总。",
-        f"- `{out_prefix}_cpu_gain_mean_ci.png` / `{out_prefix}_cuda_gain_mean_ci.png`：gain 均值曲线与 95% CI。",
-        f"- `{out_prefix}_cpu_mse_mean_ci.png` / `{out_prefix}_cuda_mse_mean_ci.png`：MSE 均值曲线与 95% CI。",
-        f"- `{out_prefix}_final_gain_boxplot.png`：最后一轮 gain 分布箱线图。",
+        f"- `{out_prefix}_<device>_<case>_p<p>_init<frac>_gain_mean_ci.png`：每个 device/case/p/init 单独保存的 gain 均值曲线与 95% CI。",
+        f"- `{out_prefix}_<device>_<case>_p<p>_init<frac>_mse_mean_ci.png`：每个 device/case/p/init 单独保存的 MSE 均值曲线与 95% CI。",
+        f"- `{out_prefix}_<device>_<case>_p<p>_init<frac>_final_gain_boxplot.png`：每个 device/case/p/init 单独保存的最后一轮 gain 分布箱线图。",
     ])
     Path(f"{out_prefix}_report.md").write_text("\n".join(lines), encoding="utf-8")
 

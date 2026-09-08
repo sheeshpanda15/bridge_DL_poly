@@ -15,13 +15,14 @@ SOURCE_DIR = Path(
     r"C:/Users/sheesh/Documents/xwechat_files/wxid_xvkf6py2gc8o22_ee18/msg/file/2026-09"
 )
 WORKSPACE = Path(__file__).resolve().parent
-FIG_DIR = WORKSPACE / "figures" / "geom_noltpr_fivep"
-REPORT_PATH = WORKSPACE / "reports" / "notes" / "geom_gpu_noltpr_fivep_report.md"
+FIG_DIR = WORKSPACE / "figures" / "geom_noltpr_sixp"
+REPORT_PATH = WORKSPACE / "reports" / "notes" / "geom_gpu_noltpr_sixp_report.md"
 
 SAFE_MAX_ORDER = 3
 FULLPR_FEATURE_CAP = 30_000
 N_ACTIVE = 8
 N_TRAIN = 7_500
+EXPERIMENT_P_VALUES = [5, 10, 20, 50, 75, 100]
 
 
 VARIABLE_DEFINITIONS = [
@@ -34,7 +35,7 @@ VARIABLE_DEFINITIONS = [
     ("init_seed", "NN 初始化随机种子。控制网络初始权重和训练随机性；同一配置下重复多次用于估计稳定性。"),
     ("special", "FullPR 是否额外加入特殊函数特征。为 True 时，每个输入变量额外加入 `sin(x_i)` 和 `exp(x_i)` 两类特征。"),
     ("n", "总样本数。当前实验为 10000，训练/测试拆分后约 7500/2500。"),
-    ("p", "输入维度，也就是自变量个数。当前实验扫 10、20、50、100、200。"),
+    ("p", "输入维度，也就是自变量个数。当前实验扫 5、10、20、50、75、100。"),
     ("max_order", "本次 FullPR/FPR 实际使用的最高多项式总阶数。它不是简单随 p 增加，而是由隐藏层数、`SAFE_MAX_ORDER` 和特征数上限共同决定。"),
     ("NN_mse_vs_y", "NN 预测相对真实测试标签 y 的均方误差。越小表示 NN 本身预测越准。"),
     ("act_io_mean", "各隐藏层从 pre-activation `u` 到 activation 输出 `g(u)` 的形状/响应变化距离的平均值。反映平均每层注入了多少非线性。"),
@@ -239,7 +240,7 @@ def save_shape_perf_scatter(df: pd.DataFrame) -> Path:
 
 
 def save_comparability_plot() -> Path:
-    p_values = np.array([10, 20, 50, 100, 200])
+    p_values = np.array(EXPERIMENT_P_VALUES)
     full_order3 = np.array([feature_count(int(p), 3, True) for p in p_values])
     full_order2 = np.array([feature_count(int(p), 2, True) for p in p_values])
     screened_order3 = np.array([screened_fpr3_count(int(p), N_ACTIVE, True) for p in p_values])
@@ -265,7 +266,7 @@ def save_comparability_plot() -> Path:
     axes[1].set_ylim(0.8, 3.2)
     axes[1].set_xlabel("Input dimension p")
     axes[1].set_ylabel("Actual FPR order for 3-hidden NN")
-    axes[1].set_title("Current code silently lowers order at p=100/200")
+    axes[1].set_title("Current code lowers order when feature count exceeds cap")
     axes[1].grid(alpha=0.25)
     for x, y in zip(p_values, actual_three_hidden):
         axes[1].text(x, y + 0.08, f"order {int(y)}", ha="center", fontsize=8)
@@ -332,7 +333,7 @@ def build_report(df: pd.DataFrame, corr: pd.DataFrame, fig_paths: list[Path]) ->
     order_display = pd.DataFrame(order_rows)
 
     comp_rows = []
-    for p in [10, 20, 50, 100, 200]:
+    for p in EXPERIMENT_P_VALUES:
         comp_rows.append({
             "p": p,
             "full_degree_3_features": feature_count(p, 3, True),
@@ -378,10 +379,10 @@ def build_report(df: pd.DataFrame, corr: pd.DataFrame, fig_paths: list[Path]) ->
 
 ## 2. 数据范围和完整性
 
-- 原始结果文件：`geom_gpu_noltpr_p10_raw.csv`、`geom_gpu_noltpr_p20_raw.csv`、`geom_gpu_noltpr_p50_raw.csv`、`geom_gpu_noltpr_p100_raw.csv`、`geom_gpu_noltpr_p200_raw.csv`。
-- 相关性文件：p=10、20、50、100 有 correlation 文件；p=200 当前没有 correlation 文件。
+- 原始结果文件：`geom_gpu_noltpr_p5_raw.csv`、`geom_gpu_noltpr_p10_raw.csv`、`geom_gpu_noltpr_p20_raw.csv`、`geom_gpu_noltpr_p50_raw.csv`、`geom_gpu_noltpr_p75_raw.csv`、`geom_gpu_noltpr_p100_raw.csv`。
+- 相关性文件：每个已完成的 p 都会生成对应的 `geom_gpu_noltpr_p<p>_correlations.csv`。
 - `LTPR` 相关列在本轮实验中全部为空，因为运行脚本使用了 `--ltpr-max-p 0`，即高维实验完全跳过 LayerTaylor-PR。
-- p=200 只有 231 行，并且缺少 `highdim_nonlinear`，因此 p=200 可以作为高维趋势参考，但不应与 p=10/20/50/100 做完全公平的全配置比较。
+- 新一轮实验要求 p=5、10、20、50、75、100 六组维度。若某个 p 的 raw/correlation 文件缺失，报告会只汇总已完成的文件。
 
 ## 3. 每个变量的含义
 
@@ -393,9 +394,8 @@ def build_report(df: pd.DataFrame, corr: pd.DataFrame, fig_paths: list[Path]) ->
 
 解读：
 
-- p=10 和 p=20 时，FPR 的中位 MSE 大约是 NN 的 1.13 倍，胜率接近 46%-47%。这说明低维时 FPR 与 NN 已经处在可以正面对比的区域。
-- p=50 时，FPR 中位误差比升到 1.28，胜率降到 35.7%，开始出现高维退化。
-- p=100 和 p=200 时，FPR 明显退化，中位误差比分别约为 3.37 和 2.75，胜率降到 17.0% 和 5.2%。
+- p=5、10 和 p=20 用来观察低/中维下 FPR 与 NN 是否处在可以正面对比的区域。
+- p=50、75 和 p=100 用来观察维度升高后 FPR 特征数、形状距离和预测误差的退化趋势。
 - TPR 在单隐层上才有结果。随着 p 变高，TPR/NN 的中位误差比下降，但胜率仍然较低，说明它更像一个局部解释工具，而不是稳定预测模型。
 
 ![Dimension trend]({rel_figs[0]})
@@ -447,7 +447,7 @@ for order in range(requested, 0, -1):
 
 {markdown_table(order_display, ["p", "n_hidden", "actual_max_order", "feature_count"])}
 
-这带来一个解释风险：p=10/20/50 的三隐层 NN 对应三阶 FPR，但 p=100/200 的三隐层 NN 对应二阶 FPR。因此高维结果同时混入了两个变化：
+这带来一个解释风险：低/中维的三隐层 NN 可能对应三阶 FPR，但高维下三隐层 NN 可能对应二阶 FPR。因此高维结果同时混入了两个变化：
 
 1. 输入维度 p 变高；
 2. 三隐层设置下 FPR 从三阶被压到二阶。
@@ -464,7 +464,7 @@ for order in range(requested, 0, -1):
 2. 对这 k 个变量生成完整三阶多项式交互。
 3. 对所有 p 个变量保留一阶主效应。
 4. 如果 `special=True`，仍对所有 p 个变量保留 `sin(x_i)` 和 `exp(x_i)`。
-5. 这样三隐层设置在 p=10/20/50/100/200 下都是真正的“三阶 FPR”，只是三阶交互被限制在同样规模的候选活跃子空间内。
+5. 这样三隐层设置在 p=5/10/20/50/75/100 下都是真正的“三阶 FPR”，只是三阶交互被限制在同样规模的候选活跃子空间内。
 
 特征数对比如下：
 
@@ -472,7 +472,7 @@ for order in range(requested, 0, -1):
 
 为什么这个方案可比：
 
-- 它保证三隐层设置在所有 p 下都对应三阶 FPR，不再出现 p=100/200 被降到二阶的问题。
+- 它保证三隐层设置在所有 p 下都对应三阶 FPR，不再出现高维配置被降到二阶的问题。
 - 它保持每个 p 下的高阶交互容量大致同一量级，高维增加主要体现在噪声变量和筛选难度，而不是完整三阶特征数爆炸。
 - 它适合你的科学问题：你关心的是“NN-FPR 距离能否诊断性能/形状接近”，而不是单纯测试一个无法估计的百万级完整三阶设计矩阵。
 
